@@ -725,23 +725,39 @@ fun ChargingScreen(repo: ChgParamRepository, mgr: ChgModuleManager) {
                                     false
                                 }
                                 
-                                // 检查是否有kprobe拦截功能
+                                // 检查是否有kprobe拦截功能（包括power_supply_set_property和pmic_glink_write）
                                 val hasKprobe = try {
-                                    val kprobeCheck = RootShell.exec("dmesg | grep -E 'power_supply_set_property.*hooked' | tail -1 || true")
+                                    val kprobeCheck = RootShell.exec("dmesg | grep -E 'power_supply_set_property.*hooked|pmic_glink_write.*hooked' | tail -2 || true")
                                     kprobeCheck.out.contains("hooked")
                                 } catch (e: Exception) {
                                     false
                                 }
                                 
-                                val errorHint = if (!usbOnline) {
-                                    "提示：USB设备未连接，某些设备需要在连接充电器时才能设置输入限制参数。"
-                                } else if (hasKprobe) {
-                                    "提示：内核模块已启用kprobe拦截功能，已尝试拦截并覆盖参数值。\n" +
-                                    "即使驱动不支持，内核模块也会尝试通过拦截方式设置参数。\n" +
-                                    "如果仍然失败，可能是硬件限制或值超出支持范围。"
-                                } else {
-                                    "提示：设备可能不支持输入电流/电压限制功能，或值超出硬件支持范围。\n" +
-                                    "请检查设备是否支持PPS充电，或确认内核模块是否启用了kprobe拦截功能。"
+                                val hasPmicGlink = try {
+                                    val pmicCheck = RootShell.exec("dmesg | grep -E 'pmic_glink_write.*hooked' | tail -1 || true")
+                                    pmicCheck.out.contains("pmic_glink_write") && pmicCheck.out.contains("hooked")
+                                } catch (e: Exception) {
+                                    false
+                                }
+                                
+                                val errorHint = when {
+                                    !usbOnline -> {
+                                        "提示：USB设备未连接，某些设备需要在连接充电器时才能设置输入限制参数。"
+                                    }
+                                    hasPmicGlink -> {
+                                        "提示：内核模块已启用pmic_glink_write拦截功能，已直接修改发送给电源IC的消息。\n" +
+                                        "即使驱动返回错误，内核模块也会绕过所有检查，直接向电源IC发送修改后的参数值。\n" +
+                                        "这是最底层的拦截方式，应该能够成功设置参数。"
+                                    }
+                                    hasKprobe -> {
+                                        "提示：内核模块已启用kprobe拦截功能，已尝试拦截并覆盖参数值。\n" +
+                                        "即使驱动不支持，内核模块也会尝试通过拦截方式设置参数。\n" +
+                                        "如果仍然失败，可能是硬件限制或值超出支持范围。"
+                                    }
+                                    else -> {
+                                        "提示：设备可能不支持输入电流/电压限制功能，或值超出硬件支持范围。\n" +
+                                        "请检查设备是否支持PPS充电，或确认内核模块是否启用了kprobe拦截功能。"
+                                    }
                                 }
                                 
                                 msg = "WARN:保存完成，但应用失败: ${com.override.battcaplsp.core.TextAbbrev.middle(detail,120)}\n$errorHint"

@@ -163,11 +163,13 @@ class ChgModuleManager(
         // 现在有了kprobe拦截功能，即使驱动不支持，内核模块也会尝试拦截并覆盖参数值
         if (result.code == 0) {
             try {
-                // 检查是否有kprobe拦截成功的日志
-                val interceptLog = RootShell.exec("dmesg | grep -E 'chg_param_override.*intercepted|chg_param_override.*overriding|power_supply_set_property.*hooked' | tail -3 || true")
+                // 检查是否有kprobe拦截成功的日志（包括power_supply_set_property和pmic_glink_write）
+                val interceptLog = RootShell.exec("dmesg | grep -E 'chg_param_override.*intercepted|chg_param_override.*overriding|power_supply_set_property.*hooked|pmic_glink_write.*hooked' | tail -5 || true")
                 val hasIntercept = interceptLog.out.isNotBlank() && 
                     (interceptLog.out.contains("intercepted") || interceptLog.out.contains("overriding") || 
                      interceptLog.out.contains("hooked"))
+                val hasPmicGlinkIntercept = interceptLog.out.contains("pmic_glink_write.*hooked") || 
+                    interceptLog.out.contains("pmic_glink_write hooked")
                 
                 // 检查是否有错误日志
                 val kernelLog = RootShell.exec("dmesg | grep -E 'chg_param_override.*failed|chg_param_override.*error' | tail -3 || true")
@@ -179,10 +181,16 @@ class ChgModuleManager(
                         // 检查是否是ICL/IVL相关的错误
                         if (lastError.contains("ICL") || lastError.contains("IVL") || lastError.contains("-22")) {
                             // 如果有kprobe拦截，说明内核模块已经尝试拦截并覆盖参数值
-                            val interceptHint = if (hasIntercept) {
-                                "\n注意：内核模块已启用kprobe拦截功能，已尝试拦截并覆盖参数值。"
-                            } else {
-                                "\n提示：内核模块可能未启用kprobe拦截功能，或驱动不支持该属性。"
+                            val interceptHint = when {
+                                hasPmicGlinkIntercept -> {
+                                    "\n注意：内核模块已启用pmic_glink_write拦截功能，已直接修改发送给电源IC的消息，绕过所有驱动检查。"
+                                }
+                                hasIntercept -> {
+                                    "\n注意：内核模块已启用kprobe拦截功能，已尝试拦截并覆盖参数值。"
+                                }
+                                else -> {
+                                    "\n提示：内核模块可能未启用kprobe拦截功能，或驱动不支持该属性。"
+                                }
                             }
                             return@withContext RootShell.ExecResult(1, result.out, 
                                 "参数写入成功，但内核应用失败: $lastError$interceptHint")

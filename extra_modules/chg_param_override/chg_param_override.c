@@ -20,8 +20,30 @@
 /* 允许通过内核态写 pd_verifed（使用 VFS 内部 API） */
 #define DISABLE_PD_VERIFED 1
 
+/* PMIC Glink 消息定义（用于拦截 pmic_glink_write） */
+#define MSG_OWNER_BC			32778
+#define MSG_TYPE_REQ_RESP		1
+#define BC_USB_STATUS_SET		0x33
+#define USB_INPUT_CURR_LIMIT		5  /* 从 qti_battery_charger.c 的枚举定义 */
+
+/* PMIC Glink 消息头结构 */
+struct pmic_glink_hdr {
+	unsigned int owner;
+	unsigned int type;
+	unsigned int opcode;
+	unsigned int len;
+};
+
+/* Battery Charger 请求消息结构 */
+struct battery_charger_req_msg {
+	struct pmic_glink_hdr hdr;
+	unsigned int battery_id;
+	unsigned int property_id;
+	unsigned int value;
+};
+
 /*
- * chg_param_override: 通过 kretprobe 在 power_supply 层覆盖/注入可写参数，
+ * chg_param_override: 通过三层拦截机制在 power_supply 层和 PMIC 层覆盖/注入可写参数，
  * 结合用户态（LSPosed Hook 应用）经 procfs 接口写入期望的充电参数，实现：
  * - 目标电压 voltage_max (uV) - 控制电池充电电压
  * - 恒流/终止电流 constant_charge_current / charge_termination_current (uA) [若驱动支持]
@@ -32,15 +54,21 @@
  * - 充电速率/限速：通过限制 input_current_limit 或调整 constant_charge_current 实现
  * - PD 协议切换：控制 pd_verifed 在 PPS (1) 和 MIPPS (0) 间切换
  *
- * 本模块采用两种路径：
- * 1) 直接写 sysfs（若节点可写且 SELinux 允许）
- * 2) 在 power_supply_show_property/get_property 返回时覆盖显示值，
- *    并在 set_property 路径通过 kprobe/kretprobe 劫持（若目标符号可见）
+ * 三层拦截机制（按优先级从高到低）：
+ * 1) pmic_glink_write kprobe: 在消息发送到PMIC硬件之前拦截，直接修改原始消息结构
+ *    完全绕过所有驱动检查，最有效（当前支持ICL）
+ * 2) power_supply_set_property kprobe: 在驱动处理之前拦截，修改传入的参数值
+ *    用于处理IVL和其他参数，绕过部分驱动检查
+ * 3) power_supply_set_property kretprobe: 在驱动处理之后拦截，覆盖返回值为成功
+ *    用于欺骗上层调用者，即使驱动返回错误也显示成功
  *
- * 为兼容性，本实现先提供一个简洁的 proc 接口：/proc/chg_param_override
- * 用户可写入 JSON 风格的简单键值：
- *   {"voltage_max": 4460000, "constant_charge_current": 6000000, "input_current_limit": 1500000, "pd_verifed": 1}
- * 或使用简写行： key=value 换行分隔
+ * 为兼容性，本实现提供一个简洁的 proc 接口：/proc/chg_param_override
+ * 用户可写入简写行格式： key=value 换行分隔
+ * 例如：
+ *   voltage_max=4460000
+ *   ccc=6000000
+ *   icl=1500000
+ *   ivl=5000000
  */
  
 
@@ -432,6 +460,64 @@ static struct kretprobe pd_show_kretprobe;
 
 /* ========== 拦截 set_property 以绕过驱动限制 ========== */
 static struct kprobe ps_set_kprobe;
+static struct kretprobe ps_set_kretprobe;
+
+/* ========== 拦截 pmic_glink_write 以直接修改发送给电源IC的消息 ========== */
+static struct kprobe pmic_glink_write_kprobe;
+
+/* 拦截 pmic_glink_write 的入口，修改发送给电源IC的消息 */
+static int pmic_glink_write_entry_handler(struct kprobe *kp, struct pt_regs *regs)
+{
+#if defined(CONFIG_ARM64)
+    void *client;
+    void *data;
+    size_t len;
+    struct battery_charger_req_msg *req_msg;
+    
+    /* 从寄存器获取函数参数 (pmic_glink_write(client, data, len)) */
+    client = (void *)regs->regs[0];
+    data = (void *)regs->regs[1];
+    len = (size_t)regs->regs[2];
+    
+    if (!data || len < sizeof(struct battery_charger_req_msg))
+        return 0;
+    
+    req_msg = (struct battery_charger_req_msg *)data;
+    
+    /* 检查是否是 Battery Charger 的消息 */
+    if (req_msg->hdr.owner != MSG_OWNER_BC || 
+        req_msg->hdr.type != MSG_TYPE_REQ_RESP ||
+        req_msg->hdr.opcode != BC_USB_STATUS_SET)
+        return 0;
+    
+    /* 
+     * CRITICAL: This runs in kprobe context (atomic/interrupt context).
+     * We CANNOT sleep, so we CANNOT take mutex_lock(&g_lock).
+     * We read g_targets without lock. Since they are simple integers,
+     * tearing is rare and acceptable.
+     */
+    
+    /* 检查是否是 USB 输入电流限制设置 */
+    if (req_msg->property_id == USB_INPUT_CURR_LIMIT && 
+        g_targets.usb_input_current_limit_ua > 0) {
+        unsigned int orig_val = req_msg->value;
+        req_msg->value = g_targets.usb_input_current_limit_ua;
+        if (verbose)
+            pr_info("chg_param_override: intercepted pmic_glink_write ICL msg, property_id=%u, overriding %u -> %u\n", 
+                    req_msg->property_id, orig_val, g_targets.usb_input_current_limit_ua);
+    }
+    /* 注意：INPUT_VOLTAGE_LIMIT 可能没有对应的 property_id，需要根据实际情况添加 */
+    
+#endif
+    return 0;
+}
+
+/* 用于保存拦截信息的结构 */
+struct ps_set_intercept_info {
+    bool should_override_result;  // 是否应该覆盖返回值
+    enum power_supply_property psp;  // 属性类型
+    int target_value;  // 目标值
+};
 
 /* 拦截 power_supply_set_property 的入口，在驱动层之前修改参数 */
 static int set_entry_handler(struct kprobe *kp, struct pt_regs *regs)
@@ -505,6 +591,76 @@ static int set_entry_handler(struct kprobe *kp, struct pt_regs *regs)
             if (verbose)
                 pr_info("chg_param_override: intercepted TERM set, overriding to %d\n", 
                         g_targets.term_current_ua);
+        }
+    }
+#endif
+    return 0;
+}
+
+/* 拦截 power_supply_set_property 的返回，如果驱动返回错误但我们已经拦截了参数，则返回成功 */
+static int set_ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+#if defined(CONFIG_ARM64)
+    struct ps_set_intercept_info *info = (struct ps_set_intercept_info *)ri->data;
+    long ret_val;
+    
+    if (!info)
+        return 0;
+    
+    /* 获取原始返回值 */
+    ret_val = (long)regs->regs[0];
+    
+    /* 如果原始调用失败（返回负值），但我们拦截了这个调用，则返回成功 */
+    if (info->should_override_result && ret_val < 0) {
+        if (verbose) {
+            pr_info("chg_param_override: set_property returned %ld, but overriding to 0 (success) for property %d\n", 
+                    ret_val, info->psp);
+        }
+        /* 覆盖返回值为成功 */
+        regs->regs[0] = 0;
+    }
+#endif
+    return 0;
+}
+
+/* kretprobe 入口处理，保存拦截信息 */
+static int set_ret_entry_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+#if defined(CONFIG_ARM64)
+    struct ps_set_intercept_info *info = (struct ps_set_intercept_info *)ri->data;
+    struct power_supply *psy;
+    enum power_supply_property psp;
+    const char *name = NULL;
+    
+    if (!info)
+        return 0;
+    
+    /* 从寄存器获取函数参数 */
+    psy = (struct power_supply *)regs->regs[0];
+    psp = (enum power_supply_property)regs->regs[1];
+    
+    if (!psy || !psy->desc)
+        return 0;
+    
+    name = psy->desc->name;
+    if (!name)
+        return 0;
+    
+    /* 初始化拦截信息 */
+    info->should_override_result = false;
+    info->psp = psp;
+    info->target_value = 0;
+    
+    /* 检查是否需要拦截返回值 */
+    if (!strcmp(name, target_usb)) {
+        if (psp == POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT && 
+            g_targets.usb_input_current_limit_ua > 0) {
+            info->should_override_result = true;
+            info->target_value = g_targets.usb_input_current_limit_ua;
+        } else if (psp == POWER_SUPPLY_PROP_INPUT_VOLTAGE_LIMIT && 
+                   g_targets.usb_input_voltage_limit_uv > 0) {
+            info->should_override_result = true;
+            info->target_value = g_targets.usb_input_voltage_limit_uv;
         }
     }
 #endif
@@ -675,6 +831,33 @@ static int __init chg_override_init(void)
         pr_info("chg_param_override: power_supply_set_property hooked (will override ICL/IVL values)\n");
     }
 
+    /* 注册 power_supply_set_property 的 kretprobe（用于覆盖返回值，即使驱动返回错误也返回成功） */
+    memset(&ps_set_kretprobe, 0, sizeof(ps_set_kretprobe));
+    ps_set_kretprobe.handler = set_ret_handler;
+    ps_set_kretprobe.entry_handler = set_ret_entry_handler;
+    ps_set_kretprobe.data_size = sizeof(struct ps_set_intercept_info);
+    ps_set_kretprobe.maxactive = 32;
+    ps_set_kretprobe.kp.symbol_name = "power_supply_set_property";
+    ret = register_kretprobe(&ps_set_kretprobe);
+    if (ret) {
+        /* 非致命错误：如果注册失败，仅禁用返回值覆盖功能 */
+        pr_warn("chg_param_override: power_supply_set_property kretprobe registration failed (%d), return value override disabled\n", ret);
+    } else {
+        pr_info("chg_param_override: power_supply_set_property kretprobe hooked (will override return values for ICL/IVL)\n");
+    }
+
+    /* 注册 pmic_glink_write 拦截（用于直接修改发送给电源IC的消息，绕过所有驱动检查） */
+    memset(&pmic_glink_write_kprobe, 0, sizeof(pmic_glink_write_kprobe));
+    pmic_glink_write_kprobe.symbol_name = "pmic_glink_write";
+    pmic_glink_write_kprobe.pre_handler = pmic_glink_write_entry_handler;
+    ret = register_kprobe(&pmic_glink_write_kprobe);
+    if (ret) {
+        /* 非致命错误：如果找不到符号，仅禁用 pmic_glink_write 拦截 */
+        pr_warn("chg_param_override: pmic_glink_write symbol not found or hook failed (%d), pmic_glink_write interception disabled\n", ret);
+    } else {
+        pr_info("chg_param_override: pmic_glink_write hooked (will intercept and modify messages to power IC)\n");
+    }
+
     /* 初始化监控定时器 */
     timer_setup(&monitor_timer, monitor_timer_callback, 0);
     mod_timer(&monitor_timer, jiffies + msecs_to_jiffies(5000));
@@ -708,7 +891,9 @@ static void __exit chg_override_exit(void)
     del_timer_sync(&monitor_timer);
     unregister_kretprobe(&pd_show_kretprobe);
     unregister_kretprobe(&ps_show_kretprobe);
+    unregister_kretprobe(&ps_set_kretprobe);
     unregister_kprobe(&ps_set_kprobe);
+    unregister_kprobe(&pmic_glink_write_kprobe);
     remove_proc_entry("chg_param_override", NULL);
     pr_info("chg_param_override: unloaded\n");
 }
