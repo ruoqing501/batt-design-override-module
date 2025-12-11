@@ -464,8 +464,11 @@ struct class_show_args {
 static struct kretprobe pd_show_kretprobe;
 
 /* ========== 拦截 set_property 以绕过驱动限制 ========== */
+/* 第一层和第二层拦截已禁用，仅使用第三层拦截（pmic_glink_write） */
+#if 0
 static struct kprobe ps_set_kprobe;
 static struct kretprobe ps_set_kretprobe;
+#endif
 
 /* ========== 拦截 pmic_glink_write 以直接修改发送给电源IC的消息 ========== */
 static struct kprobe pmic_glink_write_kprobe;
@@ -517,6 +520,8 @@ static int pmic_glink_write_entry_handler(struct kprobe *kp, struct pt_regs *reg
     return 0;
 }
 
+/* 第一层和第二层拦截已禁用，仅使用第三层拦截（pmic_glink_write） */
+#if 0
 /* 用于保存拦截信息的结构 */
 struct ps_set_intercept_info {
     bool should_override_result;  // 是否应该覆盖返回值
@@ -690,6 +695,7 @@ static int set_ret_entry_handler(struct kretprobe_instance *ri, struct pt_regs *
 #endif
     return 0;
 }
+#endif  /* #if 0 - 第一层和第二层拦截已禁用 */
 
 static int show_entry_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
