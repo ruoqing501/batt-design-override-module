@@ -75,9 +75,10 @@ class SafeModuleInstaller(private val context: Context) {
             logD("SafeModuleInstaller", "insmod 结果: code=${insmodResult.code}, out=${insmodResult.out}, err=${insmodResult.err}")
             
             if (insmodResult.code != 0) {
+                val errorMsg = if (insmodResult.err.isNotBlank()) insmodResult.err else insmodResult.out
                 return@withContext TestResult(
                     passed = false,
-                    message = "insmod 失败: ${insmodResult.err}",
+                    message = "insmod 失败 (code ${insmodResult.code}): $errorMsg",
                     dmesgTail = getRecentKernelLog(),
                     executedCmd = executedCmd
                 )

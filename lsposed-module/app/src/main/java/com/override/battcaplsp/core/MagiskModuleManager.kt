@@ -377,8 +377,28 @@ class MagiskModuleManager(private val context: Context) {
             done
             
             if [ -n "${'$'}CHG_KO" ]; then
-                log "加载充电参数模块: ${'$'}CHG_KO"
-                insmod "${'$'}CHG_KO" 2>>"${'$'}LOGFILE" || logw "充电模块加载失败"
+                # chg 模块不通过 insmod 参数配置，采用 proc 接口；这里只负责加载，明确不传递任何参数
+                log "检测到 chg 模块，尝试加载: ${'$'}CHG_KO"
+                # 使用 insmod 直接加载，不传递任何参数（避免未知参数警告）
+                if ! insmod "${'$'}CHG_KO" 2>>"${'$'}LOGFILE"; then
+                    logw "insmod chg 失败"
+                    # 如果 insmod 失败，尝试使用 modprobe，但明确指定不传递参数
+                    if command -v modprobe >/dev/null 2>&1; then
+                        log "insmod chg 失败，尝试 modprobe（无参数）"
+                        # 使用 -r 选项移除模块（如果已加载），然后重新加载
+                        modprobe -r chg_param_override 2>/dev/null || true
+                        # 直接使用文件路径加载，避免 modprobe 读取配置文件
+                        if modprobe "${'$'}CHG_KO" 2>>"${'$'}LOGFILE"; then
+                            log "modprobe chg 成功"
+                        else
+                            logw "modprobe chg 也失败"
+                        fi
+                    else
+                        logw "insmod chg 失败且无 modprobe 可用"
+                    fi
+                else
+                    log "insmod chg 成功"
+                fi
                 
                 # 应用充电参数
                 PROC_PATH="/proc/chg_param_override"
@@ -388,6 +408,7 @@ class MagiskModuleManager(private val context: Context) {
                     [ -n "${'$'}CHG_CCC_UA" ] && LINES="${'$'}LINES\nconstant_charge_current=${'$'}CHG_CCC_UA"
                     [ -n "${'$'}CHG_TERM_UA" ] && LINES="${'$'}LINES\ncharge_term_current=${'$'}CHG_TERM_UA"
                     [ -n "${'$'}CHG_ICL_UA" ] && LINES="${'$'}LINES\ninput_current_limit=${'$'}CHG_ICL_UA"
+                    [ -n "${'$'}CHG_IVL_UV" ] && LINES="${'$'}LINES\ninput_voltage_limit=${'$'}CHG_IVL_UV"
                     [ -n "${'$'}CHG_LIMIT_PERCENT" ] && LINES="${'$'}LINES\ncharge_control_limit=${'$'}CHG_LIMIT_PERCENT"
                     if [ "${'$'}{CHG_PD_VERIFED_ENABLED:-0}" = "1" ] && [ -n "${'$'}CHG_PD_VERIFED" ]; then
                         LINES="${'$'}LINES\npd_verifed=${'$'}CHG_PD_VERIFED"
@@ -431,6 +452,7 @@ class MagiskModuleManager(private val context: Context) {
             # CHG_CCC_UA=6000000
             # CHG_TERM_UA=200000
             # CHG_ICL_UA=1500000
+            # CHG_IVL_UV=9000000
             # CHG_LIMIT_PERCENT=85
             # CHG_PD_VERIFED_ENABLED=1
             # CHG_PD_VERIFED=1

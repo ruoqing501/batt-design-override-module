@@ -173,6 +173,7 @@ fi
 
 if [ -n "$CHG_KO" ]; then
     log "加载充电参数模块: $CHG_KO"
+    # 明确不传递任何参数，避免未知参数警告
     insmod "$CHG_KO" 2>/dev/null || logw "充电模块加载失败"
     
     # 应用充电参数
@@ -183,6 +184,7 @@ if [ -n "$CHG_KO" ]; then
         [ -n "$CHG_CCC_UA" ] && LINES="$LINES\nconstant_charge_current=$CHG_CCC_UA"
         [ -n "$CHG_TERM_UA" ] && LINES="$LINES\ncharge_term_current=$CHG_TERM_UA"
         [ -n "$CHG_ICL_UA" ] && LINES="$LINES\ninput_current_limit=$CHG_ICL_UA"
+        [ -n "$CHG_IVL_UV" ] && LINES="$LINES\ninput_voltage_limit=$CHG_IVL_UV"
         [ -n "$CHG_LIMIT_PERCENT" ] && LINES="$LINES\ncharge_control_limit=$CHG_LIMIT_PERCENT"
         if [ "${CHG_PD_VERIFED_ENABLED:-0}" = "1" ] && [ -n "$CHG_PD_VERIFED" ]; then
             LINES="$LINES\npd_verifed=$CHG_PD_VERIFED"

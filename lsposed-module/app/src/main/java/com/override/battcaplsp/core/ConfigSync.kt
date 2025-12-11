@@ -133,6 +133,7 @@ object ConfigSync {
                 ccc: Long,
                 term: Long,
                 icl: Long,
+                ivl: Long,
                 chargeLimit: Int,
                 verbose: Boolean,
                 pdDesired: Int
@@ -150,20 +151,20 @@ object ConfigSync {
                 val vb = if (verbose) 1 else 0
                 val pd = if (pdDesired == 0) 0 else 1
 
-                // 数值基本范围裁剪，0 表示不启用该项
-                fun clamp(v: Long): Long = v.coerceIn(0, 10_000_000_000L) // 1e10 µ(x) 作为上限防止写入异常
-                val vmax = clamp(voltageMax)
-                val cccV = clamp(ccc)
-                val termV = clamp(term)
-                val iclV = clamp(icl)
-                val cl = chargeLimit.coerceIn(0, 100)
+                // 使用验证器进行范围限制，0 表示不启用该项
+                val vmax = ChgParamValidator.clampVoltageMax(voltageMax)
+                val cccV = ChgParamValidator.clampCcc(ccc)
+                val termV = ChgParamValidator.clampTerm(term)
+                val iclV = ChgParamValidator.clampIcl(icl)
+                val ivlV = ChgParamValidator.clampIvl(ivl)
+                val cl = ChgParamValidator.clampChargeLimit(chargeLimit)
 
                 val script = """
                 CONF="${confPath}"
                 mkdir -p "${'$'}(dirname "${'$'}CONF")" || exit 1
                 TMP="${'$'}CONF.tmp.$$"
                 if [ -f "${'$'}CONF" ]; then
-                    grep -E '^[A-Z0-9_]+=' "${'$'}CONF" | grep -v -E '^(CHG_APPLY_ON_BOOT|CHG_BATT_NAME|CHG_USB_NAME|CHG_VOLTAGE_MAX_UV|CHG_CCC_UA|CHG_TERM_UA|CHG_ICL_UA|CHG_CHARGE_LIMIT|PD_HELPER_ENABLE|PD_DESIRED|VERBOSE)=' > "${'$'}TMP" || true
+                    grep -E '^[A-Z0-9_]+=' "${'$'}CONF" | grep -v -E '^(CHG_APPLY_ON_BOOT|CHG_BATT_NAME|CHG_USB_NAME|CHG_VOLTAGE_MAX_UV|CHG_CCC_UA|CHG_TERM_UA|CHG_ICL_UA|CHG_IVL_UV|CHG_CHARGE_LIMIT|PD_HELPER_ENABLE|PD_DESIRED|VERBOSE)=' > "${'$'}TMP" || true
                 else
                     : > "${'$'}TMP" || exit 1
                 fi
@@ -175,6 +176,7 @@ object ConfigSync {
                     echo "CHG_CCC_UA=${cccV}"
                     echo "CHG_TERM_UA=${termV}"
                     echo "CHG_ICL_UA=${iclV}"
+                    echo "CHG_IVL_UV=${ivlV}"
                     echo "CHG_CHARGE_LIMIT=${cl}"
                     echo "VERBOSE=${vb}"
                     echo "PD_HELPER_ENABLE=1"

@@ -23,9 +23,12 @@
 /*
  * chg_param_override: 通过 kretprobe 在 power_supply 层覆盖/注入可写参数，
  * 结合用户态（LSPosed Hook 应用）经 procfs 接口写入期望的充电参数，实现：
- * - 目标电压 voltage_max (uV)
+ * - 目标电压 voltage_max (uV) - 控制电池充电电压
  * - 恒流/终止电流 constant_charge_current / charge_termination_current (uA) [若驱动支持]
- * - USB 输入电流限制 input_current_limit (uA)
+ * - USB 输入电流限制 input_current_limit (uA) - 限制 USB 输入电流
+ * - USB 输入电压限制 input_voltage_limit (uV) - 限制 USB 输入电压（用于 PPS 功率控制）
+ * - 充电功率控制：通过同时设置 voltage_max × constant_charge_current 控制电池充电功率
+ *   或通过 input_voltage_limit × input_current_limit 控制 USB 输入功率（PPS）
  * - 充电速率/限速：通过限制 input_current_limit 或调整 constant_charge_current 实现
  * - PD 协议切换：控制 pd_verifed 在 PPS (1) 和 MIPPS (0) 间切换
  *
@@ -69,6 +72,7 @@ struct chg_targets {
     int constant_charge_current_ua;    /* 电池恒流（近似充电电流上限） */
     int term_current_ua;               /* 终止电流（若驱动支持 set_property） */
     int usb_input_current_limit_ua;    /* USB 输入电流限制 */
+    int usb_input_voltage_limit_uv;    /* USB 输入电压限制（用于 PPS 功率控制） */
     
     /* 新增：电池充电控制 */
     int charge_control_limit_percent;  /* 充电限制百分比 (0-100) */
@@ -228,6 +232,13 @@ static int apply_targets_locked(void)
             if (rc && verbose)
                 pr_info("chg_param_override: set ICL failed %d\n", rc);
         }
+        /* 支持 PPS 充电：同时控制输入电压和电流以实现精确功率控制 */
+        if (g_targets.usb_input_voltage_limit_uv > 0) {
+            rc = write_psy_int(usb, POWER_SUPPLY_PROP_INPUT_VOLTAGE_LIMIT,
+                               g_targets.usb_input_voltage_limit_uv);
+            if (rc && verbose)
+                pr_info("chg_param_override: set IVL failed %d\n", rc);
+        }
     }
     if (batt)
         power_supply_put(batt);
@@ -254,12 +265,14 @@ static ssize_t proc_read(struct file *file, char __user *buf, size_t count, loff
         "ccc=%d\n"
         "term=%d\n"
         "icl=%d\n"
+        "ivl=%d\n"
         "auto_reapply=%s\n",
         target_batt, target_usb,
         g_targets.voltage_max_uv,
         g_targets.constant_charge_current_ua,
         g_targets.term_current_ua,
         g_targets.usb_input_current_limit_ua,
+        g_targets.usb_input_voltage_limit_uv,
         auto_reapply ? "yes" : "no");
     mutex_unlock(&g_lock);
     if (len > count)
@@ -281,6 +294,8 @@ static int parse_kv(const char *key, const char *val)
         g_targets.term_current_ua = v;
     } else if ((!strcmp(key, "icl") || !strcmp(key, "input_current_limit")) && kstrtoint(val, 10, &v) == 0) {
         g_targets.usb_input_current_limit_ua = v;
+    } else if ((!strcmp(key, "ivl") || !strcmp(key, "input_voltage_limit")) && kstrtoint(val, 10, &v) == 0) {
+        g_targets.usb_input_voltage_limit_uv = v;
     } else if ((!strcmp(key, "charge_limit") || !strcmp(key, "charge_control_limit")) && kstrtoint(val, 10, &v) == 0) {
         if (v >= 0 && v <= 100) {
             g_targets.charge_control_limit_percent = v;
@@ -415,6 +430,87 @@ struct class_show_args {
 };
 static struct kretprobe pd_show_kretprobe;
 
+/* ========== 拦截 set_property 以绕过驱动限制 ========== */
+static struct kprobe ps_set_kprobe;
+
+/* 拦截 power_supply_set_property 的入口，在驱动层之前修改参数 */
+static int set_entry_handler(struct kprobe *kp, struct pt_regs *regs)
+{
+#if defined(CONFIG_ARM64)
+    struct power_supply *psy;
+    enum power_supply_property psp;
+    union power_supply_propval *val;
+    const char *name = NULL;
+    
+    /* 从寄存器获取函数参数 */
+    psy = (struct power_supply *)regs->regs[0];
+    psp = (enum power_supply_property)regs->regs[1];
+    val = (union power_supply_propval *)regs->regs[2];
+    
+    if (!psy || !psy->desc || !val)
+        return 0;
+    
+    name = psy->desc->name;
+    if (!name)
+        return 0;
+    
+    /* 
+     * CRITICAL: This runs in kprobe context (atomic/interrupt context).
+     * We CANNOT sleep, so we CANNOT take mutex_lock(&g_lock).
+     * We read g_targets without lock. Since they are simple integers,
+     * tearing is rare and acceptable.
+     */
+    
+    /* 拦截 USB 输入电流限制设置 */
+    if (!strcmp(name, target_usb)) {
+        if (psp == POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT && 
+            g_targets.usb_input_current_limit_ua > 0) {
+            /* 保存原始值用于日志 */
+            int orig_val = val->intval;
+            /* 覆盖传入的值为我们想要的值 */
+            val->intval = g_targets.usb_input_current_limit_ua;
+            if (verbose)
+                pr_info("chg_param_override: intercepted ICL set to %d, overriding to %d\n", 
+                        orig_val, g_targets.usb_input_current_limit_ua);
+        }
+        /* 拦截 USB 输入电压限制设置 */
+        else if (psp == POWER_SUPPLY_PROP_INPUT_VOLTAGE_LIMIT && 
+                 g_targets.usb_input_voltage_limit_uv > 0) {
+            /* 保存原始值用于日志 */
+            int orig_val = val->intval;
+            /* 覆盖传入的值为我们想要的值 */
+            val->intval = g_targets.usb_input_voltage_limit_uv;
+            if (verbose)
+                pr_info("chg_param_override: intercepted IVL set to %d, overriding to %d\n", 
+                        orig_val, g_targets.usb_input_voltage_limit_uv);
+        }
+    }
+    /* 也可以拦截电池相关参数（如果需要） */
+    else if (!strcmp(name, target_batt)) {
+        if (psp == POWER_SUPPLY_PROP_VOLTAGE_MAX && 
+            g_targets.voltage_max_uv > 0) {
+            val->intval = g_targets.voltage_max_uv;
+            if (verbose)
+                pr_info("chg_param_override: intercepted VMAX set, overriding to %d\n", 
+                        g_targets.voltage_max_uv);
+        } else if (psp == POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT && 
+                   g_targets.constant_charge_current_ua > 0) {
+            val->intval = g_targets.constant_charge_current_ua;
+            if (verbose)
+                pr_info("chg_param_override: intercepted CCC set, overriding to %d\n", 
+                        g_targets.constant_charge_current_ua);
+        } else if (psp == POWER_SUPPLY_PROP_CHARGE_TERM_CURRENT && 
+                   g_targets.term_current_ua > 0) {
+            val->intval = g_targets.term_current_ua;
+            if (verbose)
+                pr_info("chg_param_override: intercepted TERM set, overriding to %d\n", 
+                        g_targets.term_current_ua);
+        }
+    }
+#endif
+    return 0;
+}
+
 static int show_entry_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
 #if defined(CONFIG_ARM64)
@@ -432,7 +528,7 @@ static int show_ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
     struct power_supply *psy;
     const char *name = NULL;
     const char *attr;
-    int v;
+    ssize_t orig_ret, v;
     /* 
      * CRITICAL: This runs in kprobe context (atomic/interrupt context).
      * We CANNOT sleep, so we CANNOT take mutex_lock(&g_lock).
@@ -442,17 +538,32 @@ static int show_ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
 
     if (!args || !args->dev || !args->da || !args->buf)
         return 0;
+    
+    /* 检查原始返回值：只有在成功时（>= 0）才覆盖 */
+#if defined(CONFIG_ARM64)
+    orig_ret = (ssize_t)regs->regs[0];
+#else
+    /* 对于非 ARM64 架构，需要根据具体架构获取返回值 */
+    orig_ret = 0; /* 假设成功，让后续逻辑处理 */
+#endif
+    
+    /* 如果原始调用失败，不覆盖返回值 */
+    if (orig_ret < 0)
+        return 0;
+    
     attr = args->da->attr.name;
+    if (!attr)
+        return 0;
+    
     psy = dev_get_drvdata(args->dev);
     if (psy && psy->desc)
         name = psy->desc->name;
-    /* no-op guard retained for clarity; fix logical-not precedence warning by simplifying */
-    if (!name) {
-        /* nothing */
-    }
+    
+    if (!name)
+        return 0;
 
     // mutex_lock(&g_lock); // REMOVED to prevent panic
-    if (name && !strcmp(name, target_batt)) {
+    if (!strcmp(name, target_batt)) {
         if (!strcmp(attr, "voltage_max") && g_targets.voltage_max_uv > 0) {
             v = scnprintf(args->buf, PAGE_SIZE, "%d\n", g_targets.voltage_max_uv);
 #if defined(CONFIG_ARM64)
@@ -470,9 +581,14 @@ static int show_ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
             regs->regs[0] = (unsigned long)v;
 #endif
         }
-    } else if (name && !strcmp(name, target_usb)) {
+    } else if (!strcmp(name, target_usb)) {
         if (!strcmp(attr, "input_current_limit") && g_targets.usb_input_current_limit_ua > 0) {
             v = scnprintf(args->buf, PAGE_SIZE, "%d\n", g_targets.usb_input_current_limit_ua);
+#if defined(CONFIG_ARM64)
+            regs->regs[0] = (unsigned long)v;
+#endif
+        } else if (!strcmp(attr, "input_voltage_limit") && g_targets.usb_input_voltage_limit_uv > 0) {
+            v = scnprintf(args->buf, PAGE_SIZE, "%d\n", g_targets.usb_input_voltage_limit_uv);
 #if defined(CONFIG_ARM64)
             regs->regs[0] = (unsigned long)v;
 #endif
@@ -547,6 +663,18 @@ static int __init chg_override_init(void)
         pr_info("chg_param_override: pd_verifed_show hooked\n");
     }
 
+    /* 注册 power_supply_set_property 拦截（用于绕过驱动限制） */
+    memset(&ps_set_kprobe, 0, sizeof(ps_set_kprobe));
+    ps_set_kprobe.symbol_name = "power_supply_set_property";
+    ps_set_kprobe.pre_handler = set_entry_handler;
+    ret = register_kprobe(&ps_set_kprobe);
+    if (ret) {
+        /* 非致命错误：如果找不到符号，仅禁用 set_property 拦截 */
+        pr_warn("chg_param_override: power_supply_set_property symbol not found or hook failed (%d), set_property interception disabled\n", ret);
+    } else {
+        pr_info("chg_param_override: power_supply_set_property hooked (will override ICL/IVL values)\n");
+    }
+
     /* 初始化监控定时器 */
     timer_setup(&monitor_timer, monitor_timer_callback, 0);
     mod_timer(&monitor_timer, jiffies + msecs_to_jiffies(5000));
@@ -580,6 +708,7 @@ static void __exit chg_override_exit(void)
     del_timer_sync(&monitor_timer);
     unregister_kretprobe(&pd_show_kretprobe);
     unregister_kretprobe(&ps_show_kretprobe);
+    unregister_kprobe(&ps_set_kprobe);
     remove_proc_entry("chg_param_override", NULL);
     pr_info("chg_param_override: unloaded\n");
 }

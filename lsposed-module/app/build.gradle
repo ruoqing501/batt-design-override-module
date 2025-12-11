@@ -11,8 +11,8 @@ android {
         applicationId 'com.override.battcaplsp'
         minSdk 27
         targetSdk 34
-        versionCode 211
-        versionName '2.1.1'
+        versionCode 213
+        versionName '2.1.3'
         // 限定仅包含常用语言资源，减少 res 体积（如需英文+简体中文，可按需增减）
         resConfigs 'en', 'zh'
     }

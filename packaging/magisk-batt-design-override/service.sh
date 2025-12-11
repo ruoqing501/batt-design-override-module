@@ -245,13 +245,17 @@ fi
 if [ -n "$CHG_KO" ]; then
   # 读取可能存在的 chg 配置键
   # 可用键：CHG_VMAX_UV CHG_CCC_UA CHG_TERM_UA CHG_ICL_UA CHG_LIMIT_PERCENT CHG_PD_VERIFED_ENABLED CHG_PD_VERIFED
-  CHG_ARGS=""
-  # chg 模块不通过 insmod 参数配置，采用 proc 接口；这里只负责加载
+  # chg 模块不通过 insmod 参数配置，采用 proc 接口；这里只负责加载，明确不传递任何参数
   log "检测到 chg 模块，尝试加载: $CHG_KO"
+  # 使用 insmod 直接加载，不传递任何参数（避免未知参数警告）
   if ! insmod "$CHG_KO" 2>>"$LOGFILE"; then
     log_insmod_error "$CHG_KO"
+    # 如果 insmod 失败，尝试使用 modprobe，但明确指定不传递参数
     if command -v modprobe >/dev/null 2>&1; then
-      log "insmod chg 失败，尝试 modprobe"
+      log "insmod chg 失败，尝试 modprobe（无参数）"
+      # 使用 -r 选项移除模块（如果已加载），然后重新加载
+      modprobe -r chg_param_override 2>/dev/null || true
+      # 直接使用文件路径加载，避免 modprobe 读取配置文件
       if modprobe "$CHG_KO" 2>>"$LOGFILE"; then
         log "modprobe chg 成功"
       else
@@ -274,6 +278,7 @@ if [ -n "$CHG_KO" ]; then
     [ -n "$CHG_CCC_UA" ] && LINES="$LINES\nconstant_charge_current=$CHG_CCC_UA"
     [ -n "$CHG_TERM_UA" ] && LINES="$LINES\ncharge_term_current=$CHG_TERM_UA"
     [ -n "$CHG_ICL_UA" ] && LINES="$LINES\ninput_current_limit=$CHG_ICL_UA"
+    [ -n "$CHG_IVL_UV" ] && LINES="$LINES\ninput_voltage_limit=$CHG_IVL_UV"
     [ -n "$CHG_LIMIT_PERCENT" ] && LINES="$LINES\ncharge_control_limit=$CHG_LIMIT_PERCENT"
     if [ "${CHG_PD_VERIFED_ENABLED:-0}" = "1" ] && [ -n "$CHG_PD_VERIFED" ]; then
       LINES="$LINES\npd_verifed=$CHG_PD_VERIFED"

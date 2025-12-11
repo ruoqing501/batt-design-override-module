@@ -2,6 +2,7 @@ package com.override.battcaplsp.ui
 
 import android.app.Activity
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import com.override.battcaplsp.LaunchTrace
@@ -60,6 +61,11 @@ class MainActivity: ComponentActivity() {
         LaunchTrace.markActivityCreateStart()
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        
+        // 确保窗口支持长截屏：移除可能阻止截屏的标志
+        // 注意：我们不设置 FLAG_SECURE，以允许截屏和长截屏
+        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        
         LaunchTrace.markSetContentStart()
         setContent {
             SideEffect { LaunchTrace.markFirstCompose() }

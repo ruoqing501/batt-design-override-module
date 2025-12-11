@@ -24,9 +24,11 @@ object ChgKeys {
     val ccc = longPreferencesKey("ccc")
     val term = longPreferencesKey("term")
     val icl = longPreferencesKey("icl")
+    val ivl = longPreferencesKey("ivl")  // input_voltage_limit
     val chargeLimit = intPreferencesKey("charge_limit")
     val verbose = intPreferencesKey("verbose")
     val pdDesired = intPreferencesKey("pd_desired")
+    val warningShown = intPreferencesKey("warning_shown")  // 是否已显示风险提示
 }
 
 data class ChgUiState(
@@ -37,6 +39,7 @@ data class ChgUiState(
     val ccc: Long = 0,
     val term: Long = 0,
     val icl: Long = 0,
+    val ivl: Long = 0,  // input_voltage_limit (uV)
     val chargeLimit: Int = 0,
     val verbose: Boolean = false,
     val pdDesired: Int = 1,
@@ -62,6 +65,7 @@ class ChgParamRepository(private val ctx: Context, private val mgr: ChgModuleMan
         ccc = p[ChgKeys.ccc] ?: 0,
         term = p[ChgKeys.term] ?: 0,
         icl = p[ChgKeys.icl] ?: 0,
+        ivl = p[ChgKeys.ivl] ?: 0,
         chargeLimit = p[ChgKeys.chargeLimit] ?: 0,
     // 默认值改为 0（之前为 1 导致未设置时 UI 误认为开启并写回1）
     verbose = (p[ChgKeys.verbose] ?: 0) == 1,
@@ -77,6 +81,7 @@ class ChgParamRepository(private val ctx: Context, private val mgr: ChgModuleMan
         ccc = p[ChgKeys.ccc] ?: 0,
         term = p[ChgKeys.term] ?: 0,
         icl = p[ChgKeys.icl] ?: 0,
+        ivl = p[ChgKeys.ivl] ?: 0,
         chargeLimit = p[ChgKeys.chargeLimit] ?: 0,
     // 同上：保持与 toStateAsync 一致
     verbose = (p[ChgKeys.verbose] ?: 0) == 1,
@@ -94,6 +99,7 @@ class ChgParamRepository(private val ctx: Context, private val mgr: ChgModuleMan
             p[ChgKeys.ccc] = n.ccc
             p[ChgKeys.term] = n.term
             p[ChgKeys.icl] = n.icl
+            p[ChgKeys.ivl] = n.ivl
             p[ChgKeys.chargeLimit] = n.chargeLimit
             p[ChgKeys.verbose] = if (n.verbose) 1 else 0
             p[ChgKeys.pdDesired] = n.pdDesired
