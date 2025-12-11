@@ -257,15 +257,20 @@ static int apply_targets_locked(void)
         if (g_targets.usb_input_current_limit_ua > 0) {
             rc = write_psy_int(usb, POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,
                                g_targets.usb_input_current_limit_ua);
-            if (rc && verbose)
+            if (rc && verbose) {
                 pr_info("chg_param_override: set ICL failed %d\n", rc);
+                pr_info("chg_param_override: note: kretprobe should override return value if interception was active\n");
+                pr_info("chg_param_override: note: pmic_glink_write interception may not trigger if driver fails before calling it\n");
+            }
         }
         /* 支持 PPS 充电：同时控制输入电压和电流以实现精确功率控制 */
         if (g_targets.usb_input_voltage_limit_uv > 0) {
             rc = write_psy_int(usb, POWER_SUPPLY_PROP_INPUT_VOLTAGE_LIMIT,
                                g_targets.usb_input_voltage_limit_uv);
-            if (rc && verbose)
+            if (rc && verbose) {
                 pr_info("chg_param_override: set IVL failed %d\n", rc);
+                pr_info("chg_param_override: note: kretprobe should override return value if interception was active\n");
+            }
         }
     }
     if (batt)
@@ -604,11 +609,20 @@ static int set_ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
     struct ps_set_intercept_info *info = (struct ps_set_intercept_info *)ri->data;
     long ret_val;
     
-    if (!info)
+    if (!info) {
+        if (verbose)
+            pr_warn("chg_param_override: kretprobe handler: info is NULL\n");
         return 0;
+    }
     
     /* 获取原始返回值 */
     ret_val = (long)regs->regs[0];
+    
+    if (verbose && (info->psp == POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT || 
+                    info->psp == POWER_SUPPLY_PROP_INPUT_VOLTAGE_LIMIT)) {
+        pr_info("chg_param_override: kretprobe handler: property=%d, ret_val=%ld, should_override=%d\n",
+                info->psp, ret_val, info->should_override_result);
+    }
     
     /* 如果原始调用失败（返回负值），但我们拦截了这个调用，则返回成功 */
     if (info->should_override_result && ret_val < 0) {
@@ -657,10 +671,14 @@ static int set_ret_entry_handler(struct kretprobe_instance *ri, struct pt_regs *
             g_targets.usb_input_current_limit_ua > 0) {
             info->should_override_result = true;
             info->target_value = g_targets.usb_input_current_limit_ua;
+            if (verbose)
+                pr_info("chg_param_override: kretprobe entry: will override ICL return value\n");
         } else if (psp == POWER_SUPPLY_PROP_INPUT_VOLTAGE_LIMIT && 
                    g_targets.usb_input_voltage_limit_uv > 0) {
             info->should_override_result = true;
             info->target_value = g_targets.usb_input_voltage_limit_uv;
+            if (verbose)
+                pr_info("chg_param_override: kretprobe entry: will override IVL return value\n");
         }
     }
 #endif
