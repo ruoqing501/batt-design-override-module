@@ -608,6 +608,7 @@ static int set_ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
 #if defined(CONFIG_ARM64)
     struct ps_set_intercept_info *info = (struct ps_set_intercept_info *)ri->data;
     long ret_val;
+    unsigned long ret_val_unsigned;
     
     if (!info) {
         if (verbose)
@@ -615,20 +616,25 @@ static int set_ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
         return 0;
     }
     
-    /* 获取原始返回值 */
-    ret_val = (long)regs->regs[0];
+    /* 获取原始返回值（ARM64 返回值在 regs[0] 中） */
+    ret_val_unsigned = (unsigned long)regs->regs[0];
+    /* 将返回值视为 32 位有符号整数，然后符号扩展到 64 位 */
+    /* 这样可以正确处理像 4294967274 (-22) 这样的值 */
+    ret_val = (long)(int)ret_val_unsigned;
     
     if (verbose && (info->psp == POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT || 
                     info->psp == POWER_SUPPLY_PROP_INPUT_VOLTAGE_LIMIT)) {
-        pr_info("chg_param_override: kretprobe handler: property=%d, ret_val=%ld, should_override=%d\n",
-                info->psp, ret_val, info->should_override_result);
+        pr_info("chg_param_override: kretprobe handler: property=%d, ret_val=%ld (unsigned=%lu), should_override=%d\n",
+                info->psp, ret_val, ret_val_unsigned, info->should_override_result);
     }
     
-    /* 如果原始调用失败（返回负值），但我们拦截了这个调用，则返回成功 */
-    if (info->should_override_result && ret_val < 0) {
+    /* 如果原始调用失败（返回非零值），但我们拦截了这个调用，则返回成功 */
+    /* 注意：power_supply_set_property 返回 0 表示成功，非零表示错误 */
+    /* 检查：ret_val != 0（任何非零返回值都表示错误） */
+    if (info->should_override_result && ret_val != 0) {
         if (verbose) {
-            pr_info("chg_param_override: set_property returned %ld, but overriding to 0 (success) for property %d\n", 
-                    ret_val, info->psp);
+            pr_info("chg_param_override: set_property returned %ld (unsigned %lu), but overriding to 0 (success) for property %d\n", 
+                    ret_val, ret_val_unsigned, info->psp);
         }
         /* 覆盖返回值为成功 */
         regs->regs[0] = 0;
@@ -837,6 +843,8 @@ static int __init chg_override_init(void)
         pr_info("chg_param_override: pd_verifed_show hooked\n");
     }
 
+    /* 第一层和第二层拦截已禁用，仅使用第三层拦截（pmic_glink_write） */
+#if 0
     /* 注册 power_supply_set_property 拦截（用于绕过驱动限制） */
     memset(&ps_set_kprobe, 0, sizeof(ps_set_kprobe));
     ps_set_kprobe.symbol_name = "power_supply_set_property";
@@ -863,6 +871,7 @@ static int __init chg_override_init(void)
     } else {
         pr_info("chg_param_override: power_supply_set_property kretprobe hooked (will override return values for ICL/IVL)\n");
     }
+#endif
 
     /* 注册 pmic_glink_write 拦截（用于直接修改发送给电源IC的消息，绕过所有驱动检查） */
     memset(&pmic_glink_write_kprobe, 0, sizeof(pmic_glink_write_kprobe));
@@ -909,8 +918,11 @@ static void __exit chg_override_exit(void)
     del_timer_sync(&monitor_timer);
     unregister_kretprobe(&pd_show_kretprobe);
     unregister_kretprobe(&ps_show_kretprobe);
+#if 0
+    /* 第一层和第二层拦截已禁用 */
     unregister_kretprobe(&ps_set_kretprobe);
     unregister_kprobe(&ps_set_kprobe);
+#endif
     unregister_kprobe(&pmic_glink_write_kprobe);
     remove_proc_entry("chg_param_override", NULL);
     pr_info("chg_param_override: unloaded\n");
