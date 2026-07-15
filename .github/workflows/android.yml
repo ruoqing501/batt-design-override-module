@@ -3,6 +3,8 @@ name: Android CI
 on:
   push:
     branches: [ "master" ]
+    tags:
+      - 'app-v*'
   pull_request:
     branches: [ "master" ]
   workflow_dispatch:
@@ -43,3 +45,10 @@ jobs:
       with:
         name: app-release
         path: lsposed-module/app/build/outputs/apk/release/*.apk
+
+    - name: Release APK
+      if: startsWith(github.ref, 'refs/tags/app-v')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: lsposed-module/app/build/outputs/apk/release/*.apk
+        generate_release_notes: true
