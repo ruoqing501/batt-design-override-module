@@ -10,7 +10,7 @@ set -euo pipefail
 #   ./scripts/build_all.sh --kernel-line 5.15 --version 1.0.6 --id-suffix fuxi
 #
 # 可选参数：
-#   --kernel-line <ver>  目标内核主线段 (5.10|5.15|6.1|6.6)，默认为 5.15（chg 模块仅有 5.15 脚本）
+#   --kernel-line <ver>  目标内核主线段 (5.10|5.15|6.1|6.6|6.12)，默认为 5.15（chg 模块仅有 5.15 脚本）
 #   --version <ver>      打包版本；缺省读取 module.prop
 #   --id-suffix <suf>    产物名附加后缀
 #   --skip-app           跳过 App 构建
@@ -184,6 +184,14 @@ case "$KERNEL_LINE" in
     BATTMOD_KO="$WS_ROOT/extra_modules/v6.1/batt_design_override/batt_design_override.ko"
     CHGMOD_KO="$WS_ROOT/extra_modules/v6.1/chg_param_override/chg_param_override.ko"
     ;;
+  6.6)  
+    BATTMOD_KO="$WS_ROOT/extra_modules/v6.6/batt_design_override/batt_design_override.ko"
+    CHGMOD_KO="$WS_ROOT/extra_modules/v6.6/chg_param_override/chg_param_override.ko"
+    ;;
+  6.12)  
+    BATTMOD_KO="$WS_ROOT/extra_modules/v6.12/batt_design_override/batt_design_override.ko"
+    CHGMOD_KO="$WS_ROOT/extra_modules/v6.12/chg_param_override/chg_param_override.ko"
+    ;;
 esac
 
 # 统一构建内核模块（电池和充电模块一起构建）
@@ -210,6 +218,7 @@ if [[ "$SKIP_BATT" != 1 || "$SKIP_CHG" != 1 ]]; then
     5.15) "$WS_ROOT/scripts/build_modules_5_15.sh" ;;
     6.1)  "$WS_ROOT/scripts/build_modules_6_1.sh" ;;
     6.6)  "$WS_ROOT/scripts/build_modules_6_6.sh" ;;
+    6.12) "$WS_ROOT/scripts/build_modules_6_12.sh" ;;
     *) die "不支持的 --kernel-line: $KERNEL_LINE" ;;
   esac
   

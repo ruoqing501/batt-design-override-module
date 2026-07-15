@@ -11,7 +11,9 @@
 | `build_modules_5_4.sh` | 5.4.x | Android 11 |
 | `build_modules_5_10.sh` | 5.10.x | Android 12 |
 | `build_modules_5_15.sh` | 5.15.x | Android 13/14 |
-| `build_modules_6_1.sh` | 6.1.x | Android 15+ |
+| `build_modules_6_1.sh` | 6.1.x | Android 14/15 |
+| `build_modules_6_6.sh` | 6.6.x | Android 15 |
+| `build_modules_6_12.sh` | 6.12.x | Android 16 |
 
 ## 主要特性
 
