@@ -16,7 +16,7 @@ class GitHubReleaseClient {
     
     companion object {
         private const val GITHUB_API_BASE = "https://api.github.com"
-        private const val REPO_OWNER = "serein-213" // 需要替换为实际的仓库所有者
+        private const val REPO_OWNER = "ruoqing501" // 需要替换为实际的仓库所有者
         private const val REPO_NAME = "batt-design-override-module" // 需要替换为实际的仓库名
         private const val RELEASE_TAG_PREFIX = "app-v" // APK release的tag前缀
     }

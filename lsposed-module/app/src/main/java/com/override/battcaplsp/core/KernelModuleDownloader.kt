@@ -18,8 +18,8 @@ class KernelModuleDownloader(private val context: Context) {
     
     companion object {
         // GitHub Releases API 基础 URL
-        private const val GITHUB_API_BASE = "https://api.github.com/repos/serein-213/batt-design-override-module"
-        private const val GITHUB_RELEASES_BASE = "https://github.com/serein-213/batt-design-override-module/releases/download"
+        private const val GITHUB_API_BASE = "https://api.github.com/repos/ruoqing501/batt-design-override-module"
+        private const val GITHUB_RELEASES_BASE = "https://github.com/ruoqing501/batt-design-override-module/releases/download"
         
         // 支持的内核版本到 Android 版本的映射（仅用于显示，可为空）
         private val KERNEL_TO_ANDROID = mapOf(
@@ -27,7 +27,8 @@ class KernelModuleDownloader(private val context: Context) {
             "5.10" to "android12",
             "5.15" to "android13",
             "6.1" to "android14",
-            "6.6" to "android15"
+            "6.6" to "android15",
+            "6.12" to "android16"
         )
 
         // 需要匹配的模块名
@@ -120,7 +121,7 @@ class KernelModuleDownloader(private val context: Context) {
     
     /** 获取所有 GitHub Releases 信息（最新优先，支持回退查找） */
     suspend fun getAllReleases(): List<GitHubRelease> = withContext(Dispatchers.IO) {
-        val ua = "battcaplsp-app/1.0 (+https://github.com/serein-213)"
+        val ua = "battcaplsp-app/1.0 (+https://github.com/ruoqing501)"
         val maxRetries = 3
         var lastError: Exception? = null
         
@@ -167,7 +168,7 @@ class KernelModuleDownloader(private val context: Context) {
     
     /** 仅获取最新release（原有逻辑保留作为回退） */
     private suspend fun getLatestReleaseOnly(): GitHubRelease? = withContext(Dispatchers.IO) {
-        val ua = "battcaplsp-app/1.0 (+https://github.com/serein-213)"
+        val ua = "battcaplsp-app/1.0 (+https://github.com/ruoqing501)"
         val maxRetries = 3
         var lastError: Exception? = null
         repeat(maxRetries) { attempt ->
@@ -470,7 +471,7 @@ class KernelModuleDownloader(private val context: Context) {
             val connection = url.openConnection() as HttpURLConnection
             connection.connectTimeout = 30000
             connection.readTimeout = 60000
-            connection.setRequestProperty("User-Agent", "battcaplsp-app/1.0 (+https://github.com/serein-213)")
+            connection.setRequestProperty("User-Agent", "battcaplsp-app/1.0 (+https://github.com/ruoqing501)")
             
             if (connection.responseCode != HttpURLConnection.HTTP_OK) {
                 return@withContext DownloadResult(
