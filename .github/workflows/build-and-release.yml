@@ -29,12 +29,38 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      app_tag: ${{ steps.version.outputs.app_tag }}
+      module_tag: ${{ steps.version.outputs.module_tag }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Compute version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/app-v* ]]; then
+            VERSION="${GITHUB_REF_NAME#app-v}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [ -n "${{ github.event.inputs.version }}" ] && [ "${{ github.event.inputs.version }}" != "auto" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            LATEST=$(git describe --tags --abbrev=0 --match 'app-v*' 2>/dev/null || git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "app-v0.0.0")
+            NUM=$(echo "$LATEST" | sed 's/^app-v//; s/^v//')
+            MAJOR=$(echo "$NUM" | cut -d. -f1)
+            MINOR=$(echo "$NUM" | cut -d. -f2)
+            PATCH=$(echo "$NUM" | cut -d. -f3)
+            VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "app_tag=app-v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "module_tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION, app_tag: app-v$VERSION, module_tag: v$VERSION"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -67,37 +93,6 @@ jobs:
           name: app-release
           path: lsposed-module/app/build/outputs/apk/release/*.apk
 
-      - name: Create Tag and Release
-        if: (github.event_name == 'workflow_dispatch' && github.event.inputs.release == 'true') || github.ref == 'refs/heads/master'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ github.event.inputs.version || 'auto' }}"
-          if [ "$VERSION" = "auto" ]; then
-            LATEST=$(git describe --tags --abbrev=0 --match 'app-v*' 2>/dev/null || echo "app-v0.0.0")
-            NUM=$(echo $LATEST | sed 's/app-v//')
-            MAJOR=$(echo $NUM | cut -d. -f1)
-            MINOR=$(echo $NUM | cut -d. -f2)
-            PATCH=$(echo $NUM | cut -d. -f3)
-            PATCH=$((PATCH + 1))
-            VERSION="${MAJOR}.${MINOR}.${PATCH}"
-          fi
-          TAG="app-v${VERSION}"
-          echo "Creating tag: $TAG"
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
-
-      - name: Release APK
-        if: (github.event_name == 'workflow_dispatch' && github.event.inputs.release == 'true') || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/app-v')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: app-v${{ github.event.inputs.version || 'auto' }}
-          files: lsposed-module/app/build/outputs/apk/release/*.apk
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-
   build-modules:
     name: Build Modules
     strategy:
@@ -115,10 +110,49 @@ jobs:
       kmi: ${{ matrix.kmi }}
       ddk_release: '20251104'
 
+  release-app:
+    name: Release App
+    needs: build-app
+    if: |
+      always() &&
+      needs.build-app.result == 'success' &&
+      (
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.release == 'true') ||
+        github.ref == 'refs/heads/master' ||
+        startsWith(github.ref, 'refs/tags/app-v') ||
+        startsWith(github.ref, 'refs/tags/v')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: app-release
+          path: release_files
+
+      - name: Release APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build-app.outputs.app_tag }}
+          files: release_files/*.apk
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+
   release-modules:
     name: Release Modules
-    needs: build-modules
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-app, build-modules]
+    if: |
+      always() &&
+      needs.build-app.result == 'success' &&
+      needs.build-modules.result == 'success' &&
+      (
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.release == 'true') ||
+        github.ref == 'refs/heads/master' ||
+        startsWith(github.ref, 'refs/tags/app-v') ||
+        startsWith(github.ref, 'refs/tags/v')
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -127,6 +161,7 @@ jobs:
         run: |
           echo "Ref: ${{ github.ref }}"
           echo "Ref name: ${{ github.ref_name }}"
+          echo "Module tag: ${{ needs.build-app.outputs.module_tag }}"
 
       - name: Download Artifacts
         uses: actions/download-artifact@v4
@@ -145,6 +180,7 @@ jobs:
       - name: Release KO Modules
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.build-app.outputs.module_tag }}
           files: release_files/*
           generate_release_notes: true
           fail_on_unmatched_files: true
