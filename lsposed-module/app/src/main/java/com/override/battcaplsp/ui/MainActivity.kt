@@ -139,11 +139,11 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val tabs = remember(isBattAvailable, isChgAvailable) {
+        val tabs = remember {
             buildList {
                 if (BuildConfig.DEBUG) add("状态")
                 add("电池")
-                if (isChgAvailable) add("充电")
+                add("充电")
                 add("设置")
                 if (BuildConfig.ENABLE_INTERNAL_DEBUG_PANEL) add("调试")
             }
@@ -604,7 +604,7 @@ class MainActivity : ComponentActivity() {
                             LogViewer(
                                 title = "电池模块日志 (batt_design_override)",
                                 logText = kernelLog,
-                                onClear = { kernelLog = "" },
+                                onClear = { kernelLog = ""; opResult = "" },
                                 maxHeight = 320
                             )
                         }

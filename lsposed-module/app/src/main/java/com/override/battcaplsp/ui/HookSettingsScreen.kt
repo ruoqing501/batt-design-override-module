@@ -238,6 +238,25 @@ fun HookSettingsScreen(
 
     LaunchedEffect(Unit) { loadStatus() }
 
+    // 打开设置页时自动检测 App 更新
+    LaunchedEffect(Unit) {
+        if (isCheckingVersion || versionCheckResult != null) return@LaunchedEffect
+        isCheckingVersion = true
+        try {
+            versionCheckResult = githubClient.checkForUpdates(context)
+        } catch (e: Exception) {
+            versionCheckResult = com.override.battcaplsp.core.GitHubReleaseClient.VersionCheckResult(
+                hasUpdate = false,
+                currentVersion = "未知",
+                latestVersion = null,
+                releaseInfo = null,
+                error = "检查更新失败: ${e.message}"
+            )
+        }
+        isCheckingVersion = false
+        if (versionCheckResult?.hasUpdate == true) showUpdateDialog = true
+    }
+
     var hookEnabled by remember { mutableStateOf(ui.hookEnabled) }
     var displayCapacity by remember { mutableStateOf(TextFieldValue(if (ui.displayCapacity > 0) ui.displayCapacity.toString() else "")) }
     var useSystemProp by remember { mutableStateOf(ui.useSystemProp) }
