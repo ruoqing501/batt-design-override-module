@@ -688,6 +688,12 @@ fun ChargingScreen(repo: ChgParamRepository, mgr: ChgModuleManager) {
                         enabled = ui.loaded,
                         secondary = true
                     )
+                    ActionButton(
+                        text = "清空日志",
+                        icon = Icons.Default.Delete,
+                        onClick = { kernelLog = "" },
+                        secondary = true
+                    )
                 }
                 if (kernelLog.isNotEmpty()) {
                     Spacer(Modifier.height(AppDimensions.SpaceSmall))

@@ -5,13 +5,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,10 +29,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import android.content.ContentValues
-import android.provider.MediaStore
-import java.text.SimpleDateFormat
-import java.util.Locale
 import java.io.File
 
 private fun extractKernelVersionFromVermagic(vermagic: String): String {
@@ -265,17 +258,7 @@ fun HookSettingsScreen(
     var hookSharedPrefs by remember { mutableStateOf(ui.hookSharedPrefs) }
     var hookJsonMethods by remember { mutableStateOf(ui.hookJsonMethods) }
     var launcherIconEnabled by remember { mutableStateOf(true) }
-    var showLogButton by remember { mutableStateOf(ui.showLogButton) }
     var msg by remember { mutableStateOf("") }
-    var showLogDialog by remember { mutableStateOf(false) }
-    var logContent by remember { mutableStateOf<String?>(null) }
-    var loadingLog by remember { mutableStateOf(false) }
-    var verboseFromConf by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        val conf = com.override.battcaplsp.core.ConfigSync.readConf(context)
-        verboseFromConf = (conf["VERBOSE"] ?: "0") == "1"
-    }
 
     LaunchedEffect(ui) {
         hookEnabled = ui.hookEnabled
@@ -286,7 +269,6 @@ fun HookSettingsScreen(
         hookSharedPrefs = ui.hookSharedPrefs
         hookJsonMethods = ui.hookJsonMethods
         launcherIconEnabled = ui.launcherIconEnabled
-        showLogButton = ui.showLogButton
     }
 
     if (showRootDialog && rootStatus != null) {
@@ -357,45 +339,6 @@ fun HookSettingsScreen(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(AppDimensions.SpaceMedium)
     ) {
-        UpdateSection(
-            isCheckingVersion = isCheckingVersion,
-            versionCheckResult = versionCheckResult,
-            showLogButton = showLogButton,
-            onCheckVersion = {
-                isCheckingVersion = true
-                scope.launch {
-                    try {
-                        versionCheckResult = githubClient.checkForUpdates(context)
-                    } catch (e: Exception) {
-                        versionCheckResult = com.override.battcaplsp.core.GitHubReleaseClient.VersionCheckResult(
-                            hasUpdate = false,
-                            currentVersion = "未知",
-                            latestVersion = null,
-                            releaseInfo = null,
-                            error = "检查更新失败: ${e.message}"
-                        )
-                    }
-                    isCheckingVersion = false
-                    if (versionCheckResult?.hasUpdate == true) showUpdateDialog = true
-                }
-            },
-            onShowLog = {
-                showLogDialog = true
-                loadingLog = true
-                logContent = null
-                scope.launch {
-                    logContent = com.override.battcaplsp.core.LogCollector.getRecentLogs(maxLines = 400)
-                    loadingLog = false
-                }
-            },
-            onHideLogButton = {
-                scope.launch {
-                    repo.update { it.copy(showLogButton = false) }
-                    Toast.makeText(context, "日志按钮已隐藏", Toast.LENGTH_SHORT).show()
-                }
-            }
-        )
-
         ModuleDownloadSection(
             kernelVersion = kernelVersion,
             kernelVersionDetail = kernelVersionDetail,
@@ -603,45 +546,6 @@ fun HookSettingsScreen(
         )
     }
 
-    if (showLogDialog) {
-        LogDialog(
-            loadingLog = loadingLog,
-            logContent = logContent,
-            verboseFromConf = verboseFromConf,
-            onVerboseChange = { on ->
-                verboseFromConf = on
-                scope.launch {
-                    val conf = com.override.battcaplsp.core.ConfigSync.readConf(context)
-                    val battName = conf["BATT_NAME"] ?: "battery"
-                    val designUah = conf["DESIGN_UAH"]?.toLongOrNull() ?: 0L
-                    val designUwh = conf["DESIGN_UWH"]?.toLongOrNull() ?: 0L
-                    val modelName = conf["MODEL_NAME"] ?: ""
-                    val overrideAny = (conf["OVERRIDE_ANY"] ?: "0") == "1"
-                    val res = com.override.battcaplsp.core.ConfigSync.syncBatt(context, battName, designUah, designUwh, modelName, overrideAny, on)
-                    if (res.code == 0) OpEvents.success("VERBOSE 已${if (on) "开启" else "关闭"}并写入 conf")
-                    else OpEvents.error("写入 VERBOSE 失败: ${res.err}")
-                }
-            },
-            onDismiss = { showLogDialog = false },
-            onSave = {
-                scope.launch {
-                    val content = logContent ?: ""
-                    if (content.isBlank()) { OpEvents.warn("无可保存的日志"); return@launch }
-                    val ok = saveLogToDownloads(context, content)
-                    if (ok) OpEvents.success("已保存到 Download 目录") else OpEvents.error("保存失败")
-                }
-            },
-            onRefresh = {
-                loadingLog = true
-                scope.launch {
-                    logContent = com.override.battcaplsp.core.LogCollector.getRecentLogs(maxLines = 400)
-                    loadingLog = false
-                }
-            },
-            onClear = { logContent = "" }
-        )
-    }
-
     if (showCalibrationDialog) {
         CalibrationDialog(
             onDismiss = { showCalibrationDialog = false },
@@ -662,152 +566,6 @@ fun HookSettingsScreen(
                 }
             }
         )
-    }
-}
-
-private suspend fun saveLogToDownloads(context: android.content.Context, content: String): Boolean = withContext(kotlinx.coroutines.Dispatchers.IO) {
-    try {
-        val resolver = context.contentResolver
-        val now = System.currentTimeMillis()
-        val fmt = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
-        val fileName = "battcaplsp-log-${fmt.format(java.util.Date(now))}.txt"
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-            put(MediaStore.Downloads.MIME_TYPE, "text/plain")
-        }
-        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return@withContext false
-        resolver.openOutputStream(uri)?.use { out -> out.write(content.toByteArray()) } ?: return@withContext false
-        true
-    } catch (_: Throwable) { false }
-}
-
-@Composable
-private fun UpdateSection(
-    isCheckingVersion: Boolean,
-    versionCheckResult: com.override.battcaplsp.core.GitHubReleaseClient.VersionCheckResult?,
-    showLogButton: Boolean,
-    onCheckVersion: () -> Unit,
-    onShowLog: () -> Unit,
-    onHideLogButton: () -> Unit
-) {
-    AppCard {
-        SectionHeader(
-            title = "应用更新",
-            icon = Icons.Default.Update,
-            description = "检查新版本、查看日志与更新渠道"
-        )
-        Spacer(Modifier.height(AppDimensions.SpaceSmall))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "Battery Override Manager",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    text = "当前版本: ${versionCheckResult?.currentVersion ?: BuildConfig.VERSION_NAME}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            ActionButton(
-                text = if (isCheckingVersion) "检查中" else "检查更新",
-                icon = if (isCheckingVersion) null else Icons.Default.Refresh,
-                onClick = onCheckVersion,
-                enabled = !isCheckingVersion
-            )
-        }
-        if (showLogButton) {
-            Spacer(Modifier.height(AppDimensions.SpaceSmall))
-            LogButton(onClick = onShowLog, onLongClick = onHideLogButton)
-        }
-        Spacer(Modifier.height(AppDimensions.SpaceSmall))
-        versionCheckResult?.let { result ->
-            if (result.error != null) {
-                AppStatusCard(status = "ERROR:${result.error}")
-            } else if (result.hasUpdate && result.latestVersion != null) {
-                UpdateBanner(
-                    latestVersion = result.latestVersion,
-                    currentVersion = result.currentVersion,
-                    onUpdate = onCheckVersion
-                )
-            } else {
-                AppStatusCard(status = "SUCCESS:已是最新版本 (${result.currentVersion})")
-            }
-        } ?: Text(
-            "点击「检查更新」查看是否有新版本",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun UpdateBanner(
-    latestVersion: String,
-    currentVersion: String,
-    onUpdate: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        shape = MaterialTheme.shapes.extraLarge
-    ) {
-        Row(
-            modifier = Modifier.padding(AppDimensions.SpaceMedium),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.NewReleases,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(40.dp)
-            )
-            Spacer(Modifier.width(AppDimensions.SpaceSmall))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "发现新版本 $latestVersion",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                Text(
-                    text = "当前版本: $currentVersion",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                )
-            }
-            Button(
-                onClick = onUpdate,
-                shape = MaterialTheme.shapes.large
-            ) { Text("更新") }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun LogButton(onClick: () -> Unit, onLongClick: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(50.dp)
-            .clip(ButtonDefaults.outlinedShape)
-            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), ButtonDefaults.outlinedShape)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        color = Color.Transparent
-    ) {
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(8.dp))
-            Text("查看日志", color = MaterialTheme.colorScheme.primary)
-        }
     }
 }
 
@@ -1387,60 +1145,6 @@ private fun UpdateDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("稍后更新") }
-        }
-    )
-}
-
-@Composable
-private fun LogDialog(
-    loadingLog: Boolean,
-    logContent: String?,
-    verboseFromConf: Boolean,
-    onVerboseChange: (Boolean) -> Unit,
-    onDismiss: () -> Unit,
-    onSave: () -> Unit,
-    onRefresh: () -> Unit,
-    onClear: () -> Unit
-) {
-    AlertDialog(
-        modifier = Modifier.fillMaxWidth(0.98f),
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-        title = { Text("最近日志 (末尾400行)") },
-        shape = MaterialTheme.shapes.extraLarge,
-        text = {
-            Column(Modifier.fillMaxWidth()) {
-                if (loadingLog) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text("正在加载...", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("详细日志 VERBOSE (写入模块 conf)", style = MaterialTheme.typography.titleSmall)
-                        Spacer(Modifier.width(12.dp))
-                        Switch(checked = verboseFromConf, onCheckedChange = onVerboseChange)
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                LogViewer(
-                    title = "日志输出",
-                    logText = (logContent ?: if (loadingLog) "" else "(无日志)"),
-                    onClear = onClear,
-                    maxHeight = 500,
-                    autoScroll = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            Row {
-                TextButton(onClick = onSave) { Text("保存") }
-                TextButton(onClick = onRefresh) { Text("刷新") }
-                TextButton(onClick = onDismiss) { Text("关闭") }
-            }
         }
     )
 }

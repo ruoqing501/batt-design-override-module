@@ -21,6 +21,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -615,18 +617,31 @@ fun ErrorState(
     )
 }
 
-/** 辅助：水平按钮行间距 */
+/** 辅助：水平按钮行，自动均分宽度 */
 @Composable
 fun ButtonRow(
     modifier: Modifier = Modifier,
-    horizontalArrangement: Arrangement.Horizontal = Arrangement.spacedBy(AppDimensions.SpaceSmall),
-    content: @Composable RowScope.() -> Unit
+    content: @Composable () -> Unit
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = horizontalArrangement,
-        content = content
-    )
+    Layout(
+        content = content,
+        modifier = modifier.fillMaxWidth()
+    ) { measurables, constraints ->
+        val count = measurables.size
+        val childWidth = if (count > 0) constraints.maxWidth / count else 0
+        val childConstraints = Constraints.fixedWidth(childWidth)
+        val placeables = measurables.map { measurable ->
+            measurable.measure(childConstraints)
+        }
+        val height = placeables.maxOfOrNull { placeable -> placeable.height } ?: 0
+        layout(constraints.maxWidth, height) {
+            var xPosition = 0
+            placeables.forEach { placeable ->
+                placeable.placeRelative(xPosition, 0)
+                xPosition += placeable.width
+            }
+        }
+    }
 }
 
 /** 水平分隔线（带上下间距） */

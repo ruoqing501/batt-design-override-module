@@ -430,16 +430,19 @@ static void monitor_timer_callback(struct timer_list *t)
 #if !DISABLE_PD_VERIFED
     current_pd_verifed = get_pd_verifed();
     if (current_pd_verifed >= 0) {
-        mutex_lock(&g_lock);
+        /*
+         * CRITICAL: Timer callback runs in softirq context and must NOT sleep.
+         * Do NOT take mutex_lock or call apply_targets_locked here.
+         * Offload to process context via delayed work if reapply is needed.
+         */
         if (current_pd_verifed != g_targets.pd_verifed && 
             g_targets.last_pd_verifed == g_targets.pd_verifed) {
             // pd_verifed 被重置了（通常是插拔充电线），重新应用设置
             if (verbose)
-                pr_info("chg_param_override: pd_verifed reset detected (%d->%d), reapplying settings\n",
+                pr_info("chg_param_override: pd_verifed reset detected (%d->%d), scheduling reapply\n",
                         g_targets.pd_verifed, current_pd_verifed);
-            apply_targets_locked();
+            schedule_delayed_work(&reapply_work, 0);
         }
-        mutex_unlock(&g_lock);
     }
 #endif
     
@@ -487,7 +490,7 @@ static int pmic_glink_write_entry_handler(struct kprobe *kp, struct pt_regs *reg
     data = (void *)regs->regs[1];
     len = (size_t)regs->regs[2];
     
-    if (!data || len < sizeof(struct battery_charger_req_msg))
+    if (!data || len != sizeof(struct battery_charger_req_msg))
         return 0;
     
     req_msg = (struct battery_charger_req_msg *)data;
@@ -505,9 +508,10 @@ static int pmic_glink_write_entry_handler(struct kprobe *kp, struct pt_regs *reg
      * tearing is rare and acceptable.
      */
     
-    /* 检查是否是 USB 输入电流限制设置 */
+    /* 检查是否是 USB 输入电流限制设置，并校验目标值在合理范围 */
     if (req_msg->property_id == USB_INPUT_CURR_LIMIT && 
-        g_targets.usb_input_current_limit_ua > 0) {
+        g_targets.usb_input_current_limit_ua > 0 &&
+        g_targets.usb_input_current_limit_ua <= 10000000) {
         unsigned int orig_val = req_msg->value;
         req_msg->value = g_targets.usb_input_current_limit_ua;
         if (verbose)

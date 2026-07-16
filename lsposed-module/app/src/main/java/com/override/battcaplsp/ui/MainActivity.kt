@@ -552,59 +552,67 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         Spacer(Modifier.height(AppDimensions.SpaceSmall))
-                        ActionButton(
-                            text = "查看内核日志",
-                            icon = Icons.Default.Terminal,
-                            onClick = {
-                                scope.launch {
-                                    try {
-                                        val cmd = "(dmesg | grep -E 'batt_design_override' || true)"
-                                        var res = RootShell.exec(cmd)
-                                        var lines = res.out.split('\n').filter { it.isNotBlank() }
-                                        if (lines.isEmpty()) {
-                                            val fb = RootShell.exec("logcat -b kernel -d | grep -E 'batt_design_override' || true")
-                                            if (fb.out.isNotBlank()) {
-                                                res = fb
-                                                lines = fb.out.split('\n').filter { it.isNotBlank() }
-                                            }
-                                        }
-                                        if (lines.isNotEmpty()) {
-                                            val tail = if (lines.size > 300) lines.takeLast(300) else lines
-                                            kernelLog = tail.joinToString("\n")
-                                            opResult = "SUCCESS:内核日志读取成功 (${tail.size} 行, 显示末尾)"
-                                            com.debug.battcaplsp.core.OpEvents.success("读取日志 ${tail.size} 行")
-                                        } else {
-                                            kernelLog = ""
-                                            opResult = if (res.err.isNotBlank()) {
-                                                "WARN:未获取到匹配日志 (stderr: ${com.override.battcaplsp.core.TextAbbrev.middle(
-                                                    res.err,
-                                                    120
-                                                )})".also {
-                                                    com.debug.battcaplsp.core.OpEvents.warn(
-                                                        "日志为空(含stderr)"
-                                                    )
+                        ButtonRow {
+                            ActionButton(
+                                text = "查看内核日志",
+                                icon = Icons.Default.Terminal,
+                                onClick = {
+                                    scope.launch {
+                                        try {
+                                            val cmd = "(dmesg | grep -E 'batt_design_override' || true)"
+                                            var res = RootShell.exec(cmd)
+                                            var lines = res.out.split('\n').filter { it.isNotBlank() }
+                                            if (lines.isEmpty()) {
+                                                val fb = RootShell.exec("logcat -b kernel -d | grep -E 'batt_design_override' || true")
+                                                if (fb.out.isNotBlank()) {
+                                                    res = fb
+                                                    lines = fb.out.split('\n').filter { it.isNotBlank() }
                                                 }
+                                            }
+                                            if (lines.isNotEmpty()) {
+                                                val tail = if (lines.size > 300) lines.takeLast(300) else lines
+                                                kernelLog = tail.joinToString("\n")
+                                                opResult = "SUCCESS:内核日志读取成功 (${tail.size} 行, 显示末尾)"
+                                                com.debug.battcaplsp.core.OpEvents.success("读取日志 ${tail.size} 行")
                                             } else {
-                                                "INFO:没有匹配到包含 batt_design_override 的日志".also {
-                                                    com.debug.battcaplsp.core.OpEvents.info("日志无匹配")
+                                                kernelLog = ""
+                                                opResult = if (res.err.isNotBlank()) {
+                                                    "WARN:未获取到匹配日志 (stderr: ${com.override.battcaplsp.core.TextAbbrev.middle(
+                                                        res.err,
+                                                        120
+                                                    )})".also {
+                                                        com.debug.battcaplsp.core.OpEvents.warn(
+                                                            "日志为空(含stderr)"
+                                                        )
+                                                    }
+                                                } else {
+                                                    "INFO:没有匹配到包含 batt_design_override 的日志".also {
+                                                        com.debug.battcaplsp.core.OpEvents.info("日志无匹配")
+                                                    }
                                                 }
                                             }
+                                        } catch (t: Throwable) {
+                                            kernelLog = ""
+                                            opResult = "ERROR:日志读取异常 ${t.message}"
+                                            com.debug.battcaplsp.core.OpEvents.error("日志读取异常: ${t.message}")
                                         }
-                                    } catch (t: Throwable) {
-                                        kernelLog = ""
-                                        opResult = "ERROR:日志读取异常 ${t.message}"
-                                        com.debug.battcaplsp.core.OpEvents.error("日志读取异常: ${t.message}")
                                     }
-                                }
-                            },
-                            secondary = true
-                        )
+                                },
+                                secondary = true
+                            )
+                            ActionButton(
+                                text = "清空日志",
+                                icon = Icons.Default.Delete,
+                                onClick = { kernelLog = "" },
+                                secondary = true
+                            )
+                        }
                         if (kernelLog.isNotEmpty()) {
                             Spacer(Modifier.height(AppDimensions.SpaceSmall))
                             LogViewer(
                                 title = "电池模块日志 (batt_design_override)",
                                 logText = kernelLog,
-                                onClear = { kernelLog = ""; opResult = "" },
+                                onClear = { kernelLog = "" },
                                 maxHeight = 320
                             )
                         }
