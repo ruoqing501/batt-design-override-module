@@ -36,20 +36,28 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Debug Info
+        run: |
+          echo "Ref: ${{ github.ref }}"
+          echo "Ref name: ${{ github.ref_name }}"
+
       - name: Download Artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: modules-*      # 匹配你的 artifact 名称
+          merge-multiple: true
 
       - name: Repackage
         run: |
           mkdir release_files
-          # 将所有下载的 .ko 文件移动到 release_files 目录
           find artifacts -name "*.ko" -exec cp {} release_files/ \;
           ls -la release_files/
+          [ "$(ls -A release_files)" ] || { echo "No .ko files!"; exit 1; }
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           files: release_files/*
           generate_release_notes: true
+          fail_on_unmatched_files: true
