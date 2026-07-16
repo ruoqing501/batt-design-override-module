@@ -13,6 +13,8 @@ import androidx.compose.ui.unit.dp
 import com.override.battcaplsp.core.ModuleManager
 import com.debug.battcaplsp.core.OpEvents
 import com.override.battcaplsp.core.RootShell
+import com.override.battcaplsp.ui.components.*
+import com.override.battcaplsp.ui.theme.AppDimensions
 import kotlinx.coroutines.launch
 
 object StatusStateHolder {
@@ -21,8 +23,8 @@ object StatusStateHolder {
     var loaded: Boolean = false
     var candidates: List<String> = emptyList()
     var lastUpdate: Long = 0
-    
-    fun isFresh(): Boolean = System.currentTimeMillis() - lastUpdate < 30000 // 30 seconds cache
+
+    fun isFresh(): Boolean = System.currentTimeMillis() - lastUpdate < 30000
 }
 
 @Composable
@@ -35,9 +37,7 @@ fun StatusScreen(moduleManager: ModuleManager) {
     var loading by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        if (StatusStateHolder.isFresh() && StatusStateHolder.rootStatus != "(查询中)") {
-            return@LaunchedEffect
-        }
+        if (StatusStateHolder.isFresh() && StatusStateHolder.rootStatus != "(查询中)") return@LaunchedEffect
         loading = true
         try {
             val rs = RootShell.getRootStatus(forceRefresh = false)
@@ -46,13 +46,12 @@ fun StatusScreen(moduleManager: ModuleManager) {
             val kv = moduleManager.getKernelVersion()
             kernelVersion = kv.full
             candidates = moduleManager.listCandidateModuleNames()
-            
+
             StatusStateHolder.rootStatus = rootStatus
             StatusStateHolder.kernelVersion = kernelVersion
             StatusStateHolder.loaded = loaded
             StatusStateHolder.candidates = candidates
             StatusStateHolder.lastUpdate = System.currentTimeMillis()
-            
             OpEvents.info("状态刷新完成")
         } catch (t: Throwable) {
             OpEvents.error("状态初始化失败: ${t.message}")
@@ -61,24 +60,33 @@ fun StatusScreen(moduleManager: ModuleManager) {
 
     val events = OpEvents.events
 
-    Column(Modifier.fillMaxSize().padding(12.dp).verticalScroll(rememberScrollState())) {
-        Text("系统与模块状态", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(8.dp))
-        StatusCard(title = "Root", content = rootStatus)
-        Spacer(Modifier.height(8.dp))
-        StatusCard(title = "内核版本", content = kernelVersion)
-        Spacer(Modifier.height(8.dp))
-        StatusCard(title = "模块加载", content = if (loaded) "已加载" else "未加载")
-        Spacer(Modifier.height(8.dp))
-        ElevatedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp)) {
-                Text("候选 .ko 文件名 (按优先级)", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(4.dp))
-                if (candidates.isEmpty()) Text("(无)") else {
-                    for (c in candidates) Text("- $c", style = MaterialTheme.typography.bodySmall)
-                }
-                Row(Modifier.padding(top = 6.dp)) {
-                    Button(enabled = !loading, onClick = {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(horizontal = AppDimensions.SpaceMedium, vertical = AppDimensions.SpaceSmall)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(AppDimensions.SpaceMedium)
+    ) {
+        AppCard {
+            SectionHeader(title = "系统与模块状态")
+            Spacer(Modifier.height(AppDimensions.SpaceSmall))
+            StatusInfoCard(title = "Root", content = rootStatus)
+            Spacer(Modifier.height(AppDimensions.SpaceSmall))
+            StatusInfoCard(title = "内核版本", content = kernelVersion)
+            Spacer(Modifier.height(AppDimensions.SpaceSmall))
+            StatusInfoCard(title = "模块加载", content = if (loaded) "已加载" else "未加载")
+        }
+
+        AppCard {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SectionHeader(title = "候选 .ko 文件名")
+                ActionButton(
+                    text = "刷新候选",
+                    onClick = {
                         scope.launch {
                             loading = true
                             try {
@@ -89,68 +97,91 @@ fun StatusScreen(moduleManager: ModuleManager) {
                                 OpEvents.error("获取候选失败: ${t.message}")
                             } finally { loading = false }
                         }
-                    }) { Text("刷新候选") }
-                }
+                    },
+                    enabled = !loading,
+                    secondary = true
+                )
             }
-        }
-        Spacer(Modifier.height(12.dp))
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Button(enabled = !loading, onClick = {
-                scope.launch {
-                    loading = true
-                    try {
-                        val rs = RootShell.getRootStatus(forceRefresh = true)
-                        rootStatus = rs.message
-                        loaded = moduleManager.isLoaded()
-                        val kv = moduleManager.getKernelVersion()
-                        kernelVersion = kv.full
-                        
-                        StatusStateHolder.rootStatus = rootStatus
-                        StatusStateHolder.kernelVersion = kernelVersion
-                        StatusStateHolder.loaded = loaded
-                        StatusStateHolder.lastUpdate = System.currentTimeMillis()
-                        
-                        OpEvents.success("状态刷新成功")
-                    } catch (t: Throwable) {
-                        OpEvents.error("刷新失败: ${t.message}")
-                    } finally { loading = false }
-                }
-            }) { Text("重新检测") }
-            Spacer(Modifier.width(8.dp))
-            Button(onClick = { OpEvents.clear() }) { Text("清空事件") }
-        }
-        Spacer(Modifier.height(16.dp))
-        Text("最近事件", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(4.dp))
-        if (events.isEmpty()) Text("(暂无事件)") else {
-            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
-                items(events) { e ->
-                    val color = when(e.type) {
-                        OpEvents.Event.Type.SUCCESS -> MaterialTheme.colorScheme.primary
-                        OpEvents.Event.Type.WARN -> MaterialTheme.colorScheme.tertiary
-                        OpEvents.Event.Type.ERROR -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.secondary
+            Spacer(Modifier.height(AppDimensions.SpaceSmall))
+            if (candidates.isEmpty()) {
+                Text("(无)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Column {
+                    candidates.forEach { c ->
+                        Text("- $c", style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("${e.time} [${e.type}] ${e.msg}", color = color, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
+
+        ButtonRow {
+            ActionButton(
+                text = "重新检测",
+                onClick = {
+                    scope.launch {
+                        loading = true
+                        try {
+                            val rs = RootShell.getRootStatus(forceRefresh = true)
+                            rootStatus = rs.message
+                            loaded = moduleManager.isLoaded()
+                            val kv = moduleManager.getKernelVersion()
+                            kernelVersion = kv.full
+                            StatusStateHolder.rootStatus = rootStatus
+                            StatusStateHolder.kernelVersion = kernelVersion
+                            StatusStateHolder.loaded = loaded
+                            StatusStateHolder.lastUpdate = System.currentTimeMillis()
+                            OpEvents.success("状态刷新成功")
+                        } catch (t: Throwable) {
+                            OpEvents.error("刷新失败: ${t.message}")
+                        } finally { loading = false }
+                    }
+                },
+                enabled = !loading
+            )
+            ActionButton(
+                text = "清空事件",
+                onClick = { OpEvents.clear() },
+                secondary = true
+            )
+        }
+
+        PreferenceGroup(title = "最近事件") {
+            if (events.isEmpty()) {
+                Text("(暂无事件)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
+                    items(events) { e ->
+                        val color = when (e.type) {
+                            OpEvents.Event.Type.SUCCESS -> MaterialTheme.colorScheme.primary
+                            OpEvents.Event.Type.WARN -> MaterialTheme.colorScheme.tertiary
+                            OpEvents.Event.Type.ERROR -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.secondary
+                        }
+                        Text("${e.time} [${e.type}] ${e.msg}", color = color, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+
         if (loading) {
-            Spacer(Modifier.height(12.dp))
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
-        Spacer(Modifier.height(48.dp))
+
+        Spacer(Modifier.height(AppDimensions.SpaceLarge))
     }
 }
 
 @Composable
-private fun StatusCard(title: String, content: String) {
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(4.dp))
-            Text(content, style = MaterialTheme.typography.bodySmall)
+private fun StatusInfoCard(title: String, content: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+        shape = MaterialTheme.shapes.small
+    ) {
+        Column(Modifier.padding(AppDimensions.SpaceSmall)) {
+            Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(2.dp))
+            Text(content, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

@@ -1,16 +1,11 @@
 package com.override.battcaplsp.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,29 +44,43 @@ fun String.stripStatusPrefix(): String {
 @Composable
 fun StatusBadge(raw: String, modifier: Modifier = Modifier, showLabel: String? = null) {
     val (type, msg) = parseStatus(raw)
-    val (icon, tint) = when (type) {
-        UnifiedStatusType.SUCCESS -> Icons.Default.CheckCircle to MaterialTheme.colorScheme.primary.copy(alpha = 0.70f)
-        UnifiedStatusType.WARN -> Icons.Default.Warning to MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f)
-        UnifiedStatusType.ERROR -> Icons.Default.Warning to MaterialTheme.colorScheme.error.copy(alpha = 0.85f)
-        UnifiedStatusType.INFO -> Icons.Default.Info to MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)
-        UnifiedStatusType.UNKNOWN -> Icons.Default.Info to MaterialTheme.colorScheme.secondary.copy(alpha = 0.60f)
+    val (containerColor, contentColor) = when (type) {
+        UnifiedStatusType.SUCCESS -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+        UnifiedStatusType.WARN -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
+        UnifiedStatusType.ERROR -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+        UnifiedStatusType.INFO -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
+        UnifiedStatusType.UNKNOWN -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
     }
-    // TODO(icons): 若后续需要为 ERROR 与 WARN 使用不同形状的图标（而不是同一个 Warning），
-    // 可在不增加 material-icons-extended 体积的前提下，内置一对本地矢量资源 (error_triangle.xml / warn_circle.xml)
-    // 然后在这里根据 type 分流；当前保持最小依赖 footprint。
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Start) {
-        if (showLabel != null) {
-            Text(showLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.width(4.dp))
-        }
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.width(16.dp))
-        Spacer(Modifier.width(4.dp))
-        Text(msg, style = MaterialTheme.typography.bodySmall, color = when (type) {
-            UnifiedStatusType.SUCCESS -> tint
-            UnifiedStatusType.WARN -> tint
-            UnifiedStatusType.ERROR -> tint
-            UnifiedStatusType.INFO -> MaterialTheme.colorScheme.onSurface
-            UnifiedStatusType.UNKNOWN -> Color.Gray
-        })
+    val icon = when (type) {
+        UnifiedStatusType.SUCCESS -> Icons.Default.CheckCircle
+        UnifiedStatusType.WARN,
+        UnifiedStatusType.ERROR -> Icons.Default.Warning
+        UnifiedStatusType.INFO,
+        UnifiedStatusType.UNKNOWN -> Icons.Default.Info
     }
+    SuggestionChip(
+        onClick = { },
+        modifier = modifier,
+        icon = {
+            Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(16.dp))
+        },
+        label = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (showLabel != null) {
+                    Text(
+                        showLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = contentColor.copy(alpha = 0.8f),
+                        modifier = Modifier.padding(end = 4.dp)
+                    )
+                }
+                Text(
+                    msg,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = contentColor
+                )
+            }
+        },
+        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = containerColor)
+    )
 }

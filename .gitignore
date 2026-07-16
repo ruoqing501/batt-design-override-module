@@ -21,6 +21,7 @@ extra_modules/v*/
 **/*.aab
 **/*.zip
 local.properties
+lsposed-module/.android-sdk/
 
 # Keystores and Secrets
 *.jks
