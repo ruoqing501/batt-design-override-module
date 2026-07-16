@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 应用主主题：系统默认无 ActionBar，Compose 负责动态主题 -->
+    <style name="AppTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <!-- 启动页主题：Android 12+ SplashScreen API -->
+    <style name="AppTheme.Splash" parent="Theme.SplashScreen">
+        <!-- 窗口背景 -->
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <!-- 启动图标：使用应用自适应图标的前景矢量 -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <!-- 图标背景色，与窗口背景保持一致可获得无缝过渡 -->
+        <item name="windowSplashScreenIconBackgroundColor">@color/splash_background</item>
+        <!-- 动画最大时长（系统限制 1000ms） -->
+        <item name="windowSplashScreenAnimationDuration">300</item>
+        <!-- SplashScreen 退出后切换到的主主题 -->
+        <item name="postSplashScreenTheme">@style/AppTheme</item>
+    </style>
+</resources>

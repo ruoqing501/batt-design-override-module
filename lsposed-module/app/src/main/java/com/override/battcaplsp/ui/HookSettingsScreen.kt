@@ -2,6 +2,7 @@ package com.override.battcaplsp.ui
 
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -10,10 +11,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -504,7 +503,7 @@ fun HookSettingsScreen(
             )
         }
 
-        PreferenceGroup(title = "桌面入口") {
+        PreferenceGroup(title = "桌面入口", icon = Icons.Default.Home) {
             PreferenceSwitch(
                 title = "显示本应用桌面图标",
                 description = "关闭后将从桌面隐藏应用图标，可通过 LSPosed 管理器的「模块设置」进入此应用。",
@@ -525,7 +524,7 @@ fun HookSettingsScreen(
             )
         }
 
-        PreferenceGroup(title = "电池容量矫正") {
+        PreferenceGroup(title = "电池容量矫正", icon = Icons.Default.BatteryChargingFull) {
             Text(
                 "清空电池日志，防止系统误判容量。",
                 style = MaterialTheme.typography.bodySmall,
@@ -534,10 +533,13 @@ fun HookSettingsScreen(
             Spacer(Modifier.height(AppDimensions.SpaceSmall))
             ActionButton(
                 text = "立即矫正",
+                icon = Icons.Default.CleaningServices,
                 onClick = { showCalibrationDialog = true },
                 secondary = true
             )
         }
+
+        AboutSection()
 
         Spacer(Modifier.height(AppDimensions.SpaceLarge))
     }
@@ -669,15 +671,32 @@ private fun UpdateSection(
     onShowLog: () -> Unit,
     onHideLogButton: () -> Unit
 ) {
-    PreferenceGroup(title = "应用更新") {
+    AppCard {
+        SectionHeader(
+            title = "应用更新",
+            icon = Icons.Default.Update,
+            description = "检查新版本、查看日志与更新渠道"
+        )
+        Spacer(Modifier.height(AppDimensions.SpaceSmall))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("版本检查", style = MaterialTheme.typography.bodyLarge)
+            Column {
+                Text(
+                    text = "Battery Override Manager",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = "当前版本: ${versionCheckResult?.currentVersion ?: BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             ActionButton(
                 text = if (isCheckingVersion) "检查中" else "检查更新",
+                icon = if (isCheckingVersion) null else Icons.Default.Refresh,
                 onClick = onCheckVersion,
                 enabled = !isCheckingVersion
             )
@@ -689,20 +708,63 @@ private fun UpdateSection(
         Spacer(Modifier.height(AppDimensions.SpaceSmall))
         versionCheckResult?.let { result ->
             if (result.error != null) {
-                StatusLine(type = StatusType.ERROR, text = result.error)
+                AppStatusCard(status = "ERROR:${result.error}")
+            } else if (result.hasUpdate && result.latestVersion != null) {
+                UpdateBanner(
+                    latestVersion = result.latestVersion,
+                    currentVersion = result.currentVersion,
+                    onUpdate = onCheckVersion
+                )
             } else {
-                Text("当前版本: ${result.currentVersion}", style = MaterialTheme.typography.bodySmall)
-                if (result.latestVersion != null) {
-                    Text("最新版本: ${result.latestVersion}", style = MaterialTheme.typography.bodySmall)
-                    if (result.hasUpdate) StatusLine(type = StatusType.UPDATE, text = "发现新版本")
-                    else StatusLine(type = StatusType.SUCCESS, text = "已是最新版本")
-                }
+                AppStatusCard(status = "SUCCESS:已是最新版本 (${result.currentVersion})")
             }
         } ?: Text(
             "点击「检查更新」查看是否有新版本",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun UpdateBanner(
+    latestVersion: String,
+    currentVersion: String,
+    onUpdate: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        shape = MaterialTheme.shapes.extraLarge
+    ) {
+        Row(
+            modifier = Modifier.padding(AppDimensions.SpaceMedium),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.NewReleases,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(40.dp)
+            )
+            Spacer(Modifier.width(AppDimensions.SpaceSmall))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "发现新版本 $latestVersion",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Text(
+                    text = "当前版本: $currentVersion",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                )
+            }
+            Button(
+                onClick = onUpdate,
+                shape = MaterialTheme.shapes.large
+            ) { Text("更新") }
+        }
     }
 }
 
@@ -753,7 +815,13 @@ private fun ModuleDownloadSection(
     onUninstallMagiskModule: () -> Unit,
     onShowModuleDownloadDialog: () -> Unit
 ) {
-    PreferenceGroup(title = "模块状态与管理") {
+    AppCard {
+        SectionHeader(
+            title = "模块状态与管理",
+            icon = Icons.Default.Extension,
+            description = "内核模块、Magisk 环境与动态安装"
+        )
+        Spacer(Modifier.height(AppDimensions.SpaceSmall))
         StatusRow(label = "内核版本", value = kernelVersionDetail.ifBlank { kernelVersion.ifEmpty { "获取中..." } })
         if (battModuleAvailable == true || battModuleLoaded == true) {
             ModuleStatusRow(
@@ -777,33 +845,25 @@ private fun ModuleDownloadSection(
         Spacer(Modifier.height(4.dp))
         StatusIconRow(label = "Magisk 环境", available = magiskAvailable)
         StatusIconRow(label = "动态模块", available = magiskModuleInstalled)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onShowModuleDownloadDialog() }
-                .padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("可用内核模块:", style = MaterialTheme.typography.bodyLarge)
-            val totalCount = availableModules.size
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("${totalCount} 个", color = if (totalCount > 0) MaterialTheme.colorScheme.primary else Color.Gray)
-                if (availableModules.isNotEmpty()) {
-                    Icon(Icons.Default.Add, contentDescription = "下载模块", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                }
-            }
-        }
+        PreferenceItem(
+            title = "可用内核模块",
+            description = "下载与当前内核匹配的 .ko 模块",
+            icon = Icons.Default.CloudDownload,
+            value = "${availableModules.size} 个",
+            onClick = onShowModuleDownloadDialog
+        )
         Spacer(Modifier.height(AppDimensions.SpaceSmall))
         ButtonRow {
             ActionButton(
                 text = if (isInstallingModule) "处理中..." else "安装动态模块",
+                icon = Icons.Default.InstallMobile,
                 onClick = onInstallMagiskModule,
                 enabled = (magiskAvailable == true) && (magiskModuleInstalled == false) && !isInstallingModule,
                 modifier = Modifier.weight(1f)
             )
             ActionButton(
                 text = if (isInstallingModule) "处理中..." else "卸载模块",
+                icon = Icons.Default.DeleteOutline,
                 onClick = onUninstallMagiskModule,
                 enabled = (magiskModuleInstalled == true) && !isInstallingModule,
                 modifier = Modifier.weight(1f),
@@ -812,26 +872,26 @@ private fun ModuleDownloadSection(
         }
         Spacer(Modifier.height(AppDimensions.SpaceSmall))
         ActionButton(
-            text = "刷新",
+            text = "刷新状态",
+            icon = Icons.Default.Refresh,
             onClick = onRefreshStatus,
             modifier = Modifier.fillMaxWidth(),
             secondary = true
         )
         if (moduleManagementMessage.isNotEmpty()) {
             Spacer(Modifier.height(AppDimensions.SpaceSmall))
-            val (stype, body) = remember(moduleManagementMessage) {
+            AppStatusCard(status = moduleManagementMessage)
+            val stype = remember(moduleManagementMessage) {
                 val parts = moduleManagementMessage.split(":", limit = 2)
                 if (parts.size == 2) {
-                    val t = when (parts[0]) {
+                    when (parts[0]) {
                         "SUCCESS" -> StatusType.SUCCESS
                         "ERROR" -> StatusType.ERROR
                         "INFO" -> StatusType.INFO
                         else -> StatusType.INFO
                     }
-                    t to parts[1]
-                } else StatusType.INFO to moduleManagementMessage
+                } else StatusType.INFO
             }
-            StatusLine(type = stype, text = body)
             if (stype == StatusType.ERROR && !lastTestFailureDetail.isNullOrBlank()) {
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -924,18 +984,19 @@ private fun XiaomiHookSection(
     resultMessage: String
 ) {
     var expanded by remember { mutableStateOf(false) }
-    PreferenceGroup(title = "小米设备 Hook 设置") {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("我的设备页面-电池容量显示", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            ActionButton(text = if (expanded) "收起" else "展开", onClick = { expanded = !expanded }, secondary = true)
-        }
+    PreferenceGroup(title = "小米设备 Hook 设置", icon = Icons.Default.PhoneAndroid) {
+        SectionHeader(
+            title = "我的设备页面-电池容量显示",
+            description = "对系统设置页面的电量显示进行 Hook",
+            expanded = expanded,
+            onExpandToggle = { expanded = !expanded }
+        )
         if (expanded) {
             Spacer(Modifier.height(AppDimensions.SpaceSmall))
             PreferenceSwitch(
                 title = "启用 Hook 功能",
                 description = "控制是否对设置页面进行电量显示 Hook",
+                icon = Icons.Default.ToggleOn,
                 checked = hookEnabled,
                 onCheckedChange = onHookEnabledChange
             )
@@ -943,6 +1004,7 @@ private fun XiaomiHookSection(
             PreferenceSwitch(
                 title = "使用系统属性",
                 description = "优先从 persist.sys.batt.capacity_mah 读取容量",
+                icon = Icons.Default.SettingsSystemDaydream,
                 checked = useSystemProp,
                 onCheckedChange = onUseSystemPropChange
             )
@@ -953,12 +1015,14 @@ private fun XiaomiHookSection(
                 label = { Text("自定义容量 (mAh)") },
                 supportingText = { Text("当不使用系统属性时，使用此值") },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !useSystemProp
+                enabled = !useSystemProp,
+                shape = MaterialTheme.shapes.large
             )
             SectionDivider()
             PreferenceSwitch(
                 title = "Hook TextView.setText",
                 description = "拦截 TextView 文本设置，替换其中的 mAh 数值",
+                icon = Icons.Default.TextFields,
                 checked = hookTextView,
                 onCheckedChange = onHookTextViewChange
             )
@@ -966,6 +1030,7 @@ private fun XiaomiHookSection(
             PreferenceSwitch(
                 title = "Hook SharedPreferences",
                 description = "拦截 SharedPreferences 读写，修改 basic_info_key",
+                icon = Icons.Default.Storage,
                 checked = hookSharedPrefs,
                 onCheckedChange = onHookSharedPrefsChange
             )
@@ -973,6 +1038,7 @@ private fun XiaomiHookSection(
             PreferenceSwitch(
                 title = "Hook JSON 方法",
                 description = "拦截 JSON 相关方法，修改设备信息 JSON",
+                icon = Icons.Default.DataObject,
                 checked = hookJsonMethods,
                 onCheckedChange = onHookJsonMethodsChange
             )
@@ -982,16 +1048,17 @@ private fun XiaomiHookSection(
                 onValueChange = onDisplayCapacityChange,
                 label = { Text("显示容量 (mAh)") },
                 supportingText = { Text("在设置页面显示的电池容量，0 表示使用系统默认") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large
             )
             Spacer(Modifier.height(AppDimensions.SpaceMedium))
             ButtonRow {
-                ActionButton(text = "保存设置", onClick = onSave)
-                ActionButton(text = "重置默认", onClick = onReset, secondary = true)
+                ActionButton(text = "保存设置", icon = Icons.Default.Save, onClick = onSave)
+                ActionButton(text = "重置默认", icon = Icons.Default.RestartAlt, onClick = onReset, secondary = true)
             }
             if (resultMessage.isNotBlank()) {
                 Spacer(Modifier.height(AppDimensions.SpaceSmall))
-                Text("结果: $resultMessage", color = ResultFormatter.getResultColor(resultMessage))
+                AppStatusCard(status = resultMessage)
             }
             Spacer(Modifier.height(AppDimensions.SpaceSmall))
             Text(
@@ -1018,50 +1085,143 @@ private fun ModuleDownloadDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.CloudDownload, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
         title = { Text("下载内核模块") },
         text = {
             Column {
-                Text("检测到 ${availableModules.size} 个可用的内核模块：", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 8.dp))
+                Text(
+                    "检测到 ${availableModules.size} 个可用的内核模块：",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
                 availableModules.forEach { moduleInfo ->
                     val isDownloading = downloadingModule == moduleInfo.name
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clickable(enabled = !isDownloading) { onDownload(moduleInfo) },
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    AppCard(
+                        onClick = if (!isDownloading) ({ onDownload(moduleInfo) }) else null
                     ) {
-                        Column(Modifier.padding(12.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(moduleInfo.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-                                if (isDownloading) {
-                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                } else {
-                                    Icon(Icons.Default.Add, contentDescription = "下载", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                                }
-                            }
-                            Spacer(Modifier.height(4.dp))
-                            Text("版本: ${moduleInfo.version}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("内核: ${moduleInfo.kernelVersion}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("大小: ${String.format("%.1f", moduleInfo.size / 1024.0)} KB", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (isDownloading) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    moduleInfo.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
                                 Spacer(Modifier.height(4.dp))
-                                LinearProgressIndicator(progress = { moduleDownloadProgress / 100f }, modifier = Modifier.fillMaxWidth())
-                                Text("$moduleDownloadProgress%", style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    "版本: ${moduleInfo.version} · 内核: ${moduleInfo.kernelVersion}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    "大小: ${String.format("%.1f", moduleInfo.size / 1024.0)} KB",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (isDownloading) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(
+                                    Icons.Default.Download,
+                                    contentDescription = "下载",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
                             }
                         }
+                        if (isDownloading) {
+                            Spacer(Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                progress = { moduleDownloadProgress / 100f },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "$moduleDownloadProgress%",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
+                    Spacer(Modifier.height(8.dp))
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("关闭") }
-        }
+        },
+        shape = MaterialTheme.shapes.extraLarge
     )
+}
+
+@Composable
+private fun AboutSection() {
+    val context = LocalContext.current
+    AppCard {
+        SectionHeader(
+            title = "关于",
+            icon = Icons.Default.Info,
+            description = "应用信息、开源链接与致谢"
+        )
+        Spacer(Modifier.height(AppDimensions.SpaceSmall))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceSmall)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(MaterialTheme.shapes.extraLarge)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.BatteryChargingFull,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Battery Override Manager",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = "版本: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "作者: 开源社区",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(Modifier.height(AppDimensions.SpaceSmall))
+        PreferenceItem(
+            title = "GitHub 仓库",
+            description = "查看源码、提交 Issue 与参与贡献",
+            icon = Icons.Default.Code,
+            value = "打开",
+            onClick = {
+                try {
+                    val intent = android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://github.com/ruoqing/batt-design-override-module")
+                    )
+                    context.startActivity(intent)
+                } catch (_: Throwable) {
+                    Toast.makeText(context, "无法打开浏览器", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -1084,7 +1244,9 @@ private fun UpdateDialog(
     val currentVersion = versionCheckResult.currentVersion
     AlertDialog(
         onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.NewReleases, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
         title = { Text("发现新版本") },
+        shape = MaterialTheme.shapes.extraLarge,
         text = {
             Column {
                 Text("发现新版本 ${releaseInfo.versionName}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 8.dp))
@@ -1224,7 +1386,9 @@ private fun LogDialog(
     AlertDialog(
         modifier = Modifier.fillMaxWidth(0.98f),
         onDismissRequest = onDismiss,
+        icon = { Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
         title = { Text("最近日志 (末尾400行)") },
+        shape = MaterialTheme.shapes.extraLarge,
         text = {
             Column(Modifier.fillMaxWidth()) {
                 if (loadingLog) {
@@ -1266,8 +1430,9 @@ private fun LogDialog(
 private fun CalibrationDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+        icon = { Icon(Icons.Default.WarningAmber, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
         title = { Text("推荐充满校正") },
+        shape = MaterialTheme.shapes.extraLarge,
         text = {
             Column {
                 Text("系统依据电池统计日志来估算剩余容量。长期使用后更换电池日志可能产生偏差，导致电量显示不准。")

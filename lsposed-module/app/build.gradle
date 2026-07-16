@@ -110,6 +110,9 @@ dependencies {
     implementation 'androidx.compose.material3:material3'
     // 只使用核心图标，不使用扩展图标包（减少约30MB）
     implementation 'androidx.compose.material:material-icons-core'
+    // Material Icons Extended：提供更丰富的语义图标，会增加 APK 体积约 2-4MB
+    implementation 'androidx.compose.material:material-icons-extended'
+    implementation 'androidx.core:core-splashscreen:1.0.1'
     implementation 'androidx.activity:activity-compose:1.9.1'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.4'
     implementation 'androidx.datastore:datastore-preferences:1.1.1'

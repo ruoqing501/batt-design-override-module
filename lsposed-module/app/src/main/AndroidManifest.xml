@@ -12,8 +12,9 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
             android:label="@string/app_name"
-        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+        android:theme="@style/AppTheme">
             <activity android:name="com.override.battcaplsp.ui.MainActivity"
+                android:theme="@style/AppTheme.Splash"
                 android:exported="true"/>
             
             <!-- 模块设置入口 - 直接跳转到主界面 -->

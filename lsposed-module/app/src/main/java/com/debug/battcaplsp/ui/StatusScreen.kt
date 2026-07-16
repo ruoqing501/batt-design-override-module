@@ -3,15 +3,19 @@ package com.debug.battcaplsp.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import com.override.battcaplsp.core.ModuleManager
 import com.debug.battcaplsp.core.OpEvents
+import com.override.battcaplsp.core.ModuleManager
 import com.override.battcaplsp.core.RootShell
 import com.override.battcaplsp.ui.components.*
 import com.override.battcaplsp.ui.theme.AppDimensions
@@ -27,6 +31,7 @@ object StatusStateHolder {
     fun isFresh(): Boolean = System.currentTimeMillis() - lastUpdate < 30000
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun StatusScreen(moduleManager: ModuleManager) {
     val scope = rememberCoroutineScope()
@@ -68,13 +73,35 @@ fun StatusScreen(moduleManager: ModuleManager) {
         verticalArrangement = Arrangement.spacedBy(AppDimensions.SpaceMedium)
     ) {
         AppCard {
-            SectionHeader(title = "系统与模块状态")
+            SectionHeader(
+                title = "系统与模块状态",
+                icon = Icons.Default.Dashboard,
+                description = "Root、内核版本与模块加载状态概览"
+            )
             Spacer(Modifier.height(AppDimensions.SpaceSmall))
-            StatusInfoCard(title = "Root", content = rootStatus)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceSmall)
+            ) {
+                StatusInfoCard(
+                    title = "Root",
+                    content = rootStatus,
+                    icon = Icons.Default.Security,
+                    modifier = Modifier.weight(1f)
+                )
+                StatusInfoCard(
+                    title = "模块加载",
+                    content = if (loaded) "已加载" else "未加载",
+                    icon = if (loaded) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                    modifier = Modifier.weight(1f)
+                )
+            }
             Spacer(Modifier.height(AppDimensions.SpaceSmall))
-            StatusInfoCard(title = "内核版本", content = kernelVersion)
-            Spacer(Modifier.height(AppDimensions.SpaceSmall))
-            StatusInfoCard(title = "模块加载", content = if (loaded) "已加载" else "未加载")
+            StatusInfoCard(
+                title = "内核版本",
+                content = kernelVersion,
+                icon = Icons.Default.Memory
+            )
         }
 
         AppCard {
@@ -83,9 +110,14 @@ fun StatusScreen(moduleManager: ModuleManager) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SectionHeader(title = "候选 .ko 文件名")
+                SectionHeader(
+                    title = "候选 .ko 文件名",
+                    icon = Icons.Default.FolderOpen,
+                    description = "可尝试加载的内核模块文件名"
+                )
                 ActionButton(
                     text = "刷新候选",
+                    icon = Icons.Default.Refresh,
                     onClick = {
                         scope.launch {
                             loading = true
@@ -104,11 +136,21 @@ fun StatusScreen(moduleManager: ModuleManager) {
             }
             Spacer(Modifier.height(AppDimensions.SpaceSmall))
             if (candidates.isEmpty()) {
-                Text("(无)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "(无)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             } else {
-                Column {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     candidates.forEach { c ->
-                        Text("- $c", style = MaterialTheme.typography.bodySmall)
+                        SuggestionChip(
+                            onClick = { },
+                            label = { Text(c, style = MaterialTheme.typography.labelSmall) }
+                        )
                     }
                 }
             }
@@ -117,6 +159,7 @@ fun StatusScreen(moduleManager: ModuleManager) {
         ButtonRow {
             ActionButton(
                 text = "重新检测",
+                icon = Icons.Default.Refresh,
                 onClick = {
                     scope.launch {
                         loading = true
@@ -140,14 +183,19 @@ fun StatusScreen(moduleManager: ModuleManager) {
             )
             ActionButton(
                 text = "清空事件",
+                icon = Icons.Default.ClearAll,
                 onClick = { OpEvents.clear() },
                 secondary = true
             )
         }
 
-        PreferenceGroup(title = "最近事件") {
+        PreferenceGroup(title = "最近事件", icon = Icons.Default.History) {
             if (events.isEmpty()) {
-                Text("(暂无事件)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "(暂无事件)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             } else {
                 LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
                     items(events) { e ->
@@ -157,7 +205,11 @@ fun StatusScreen(moduleManager: ModuleManager) {
                             OpEvents.Event.Type.ERROR -> MaterialTheme.colorScheme.error
                             else -> MaterialTheme.colorScheme.secondary
                         }
-                        Text("${e.time} [${e.type}] ${e.msg}", color = color, style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            "${e.time} [${e.type}] ${e.msg}",
+                            color = color,
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
             }
@@ -172,16 +224,37 @@ fun StatusScreen(moduleManager: ModuleManager) {
 }
 
 @Composable
-private fun StatusInfoCard(title: String, content: String) {
+private fun StatusInfoCard(
+    title: String,
+    content: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier
+) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = MaterialTheme.shapes.small
+        shape = MaterialTheme.shapes.large
     ) {
         Column(Modifier.padding(AppDimensions.SpaceSmall)) {
-            Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(2.dp))
-            Text(content, style = MaterialTheme.typography.bodyMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    title,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                content,
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
     }
 }

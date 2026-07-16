@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动页背景：使用接近 surface 的中性色，在动态主题下由系统图标背景层覆盖 -->
+    <color name="splash_background">#FFFDFDFD</color>
+    <color name="splash_background_night">#FF1C1B1F</color>
+</resources>
