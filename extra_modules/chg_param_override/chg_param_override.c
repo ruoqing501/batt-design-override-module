@@ -87,6 +87,19 @@ static bool auto_reapply = true;
 module_param(auto_reapply, bool, 0644);
 MODULE_PARM_DESC(auto_reapply, "Auto reapply pd_verifed setting after cable replug");
 
+/* kprobe 开关：加载时若导致重启，可逐项关闭以定位问题 */
+static bool enable_show_override = true;
+module_param(enable_show_override, bool, 0644);
+MODULE_PARM_DESC(enable_show_override, "Override power_supply_show_property output (default: 1)");
+
+static bool enable_pd_show_override = false;
+module_param(enable_pd_show_override, bool, 0644);
+MODULE_PARM_DESC(enable_pd_show_override, "Override pd_verifed_show output (default: 0, may crash on non-QTI)");
+
+static bool enable_pmic_glink_override = false;
+module_param(enable_pmic_glink_override, bool, 0644);
+MODULE_PARM_DESC(enable_pmic_glink_override, "Intercept pmic_glink_write messages (default: 0, high crash risk if struct mismatch)");
+
 // PD Verified 路径
 #if !DISABLE_PD_VERIFED
 static char pd_verifed_path[128] = "/sys/class/qcom-battery/pd_verifed";
@@ -457,6 +470,7 @@ struct ps_show_args {
     char *buf;
 };
 static struct kretprobe ps_show_kretprobe;
+static bool ps_show_kretprobe_registered = false;
 
 /* 针对 qti_battery_charger 的 pd_verifed_show：强制读取为 1 */
 struct class_show_args {
@@ -465,6 +479,7 @@ struct class_show_args {
     char *buf;
 };
 static struct kretprobe pd_show_kretprobe;
+static bool pd_show_kretprobe_registered = false;
 
 /* ========== 拦截 set_property 以绕过驱动限制 ========== */
 /* 第一层和第二层拦截已禁用，仅使用第三层拦截（pmic_glink_write） */
@@ -475,6 +490,7 @@ static struct kretprobe ps_set_kretprobe;
 
 /* ========== 拦截 pmic_glink_write 以直接修改发送给电源IC的消息 ========== */
 static struct kprobe pmic_glink_write_kprobe;
+static bool pmic_glink_write_kprobe_registered = false;
 
 /* 拦截 pmic_glink_write 的入口，修改发送给电源IC的消息 */
 static int pmic_glink_write_entry_handler(struct kprobe *kp, struct pt_regs *regs)
@@ -509,14 +525,15 @@ static int pmic_glink_write_entry_handler(struct kprobe *kp, struct pt_regs *reg
      */
     
     /* 检查是否是 USB 输入电流限制设置，并校验目标值在合理范围 */
-    if (req_msg->property_id == USB_INPUT_CURR_LIMIT && 
-        g_targets.usb_input_current_limit_ua > 0 &&
-        g_targets.usb_input_current_limit_ua <= 10000000) {
-        unsigned int orig_val = req_msg->value;
-        req_msg->value = g_targets.usb_input_current_limit_ua;
-        if (verbose)
-            pr_info("chg_param_override: intercepted pmic_glink_write ICL msg, property_id=%u, overriding %u -> %u\n", 
-                    req_msg->property_id, orig_val, g_targets.usb_input_current_limit_ua);
+    if (req_msg->property_id == USB_INPUT_CURR_LIMIT) {
+        int target_icl = READ_ONCE(g_targets.usb_input_current_limit_ua);
+        if (target_icl > 0 && target_icl <= 10000000) {
+            unsigned int orig_val = req_msg->value;
+            WRITE_ONCE(req_msg->value, (unsigned int)target_icl);
+            if (verbose)
+                pr_info("chg_param_override: intercepted pmic_glink_write ICL msg, property_id=%u, overriding %u -> %d\n", 
+                        req_msg->property_id, orig_val, target_icl);
+        }
     }
     /* 注意：INPUT_VOLTAGE_LIMIT 可能没有对应的 property_id，需要根据实际情况添加 */
     
@@ -752,39 +769,51 @@ static int show_ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
     if (!name)
         return 0;
 
-    // mutex_lock(&g_lock); // REMOVED to prevent panic
     if (!strcmp(name, target_batt)) {
-        if (!strcmp(attr, "voltage_max") && g_targets.voltage_max_uv > 0) {
-            v = scnprintf(args->buf, PAGE_SIZE, "%d\n", g_targets.voltage_max_uv);
+        if (!strcmp(attr, "voltage_max")) {
+            int target = READ_ONCE(g_targets.voltage_max_uv);
+            if (target > 0) {
+                v = scnprintf(args->buf, PAGE_SIZE, "%d\n", target);
 #if defined(CONFIG_ARM64)
-            regs->regs[0] = (unsigned long)v;
+                regs->regs[0] = (unsigned long)v;
 #endif
-        } else if (!strcmp(attr, "constant_charge_current") && g_targets.constant_charge_current_ua > 0) {
-            v = scnprintf(args->buf, PAGE_SIZE, "%d\n", g_targets.constant_charge_current_ua);
+            }
+        } else if (!strcmp(attr, "constant_charge_current")) {
+            int target = READ_ONCE(g_targets.constant_charge_current_ua);
+            if (target > 0) {
+                v = scnprintf(args->buf, PAGE_SIZE, "%d\n", target);
 #if defined(CONFIG_ARM64)
-            regs->regs[0] = (unsigned long)v;
+                regs->regs[0] = (unsigned long)v;
 #endif
-        } else if ((!strcmp(attr, "charge_termination_current") || !strcmp(attr, "charge_term_current"))
-                   && g_targets.term_current_ua > 0) {
-            v = scnprintf(args->buf, PAGE_SIZE, "%d\n", g_targets.term_current_ua);
+            }
+        } else if ((!strcmp(attr, "charge_termination_current") || !strcmp(attr, "charge_term_current"))) {
+            int target = READ_ONCE(g_targets.term_current_ua);
+            if (target > 0) {
+                v = scnprintf(args->buf, PAGE_SIZE, "%d\n", target);
 #if defined(CONFIG_ARM64)
-            regs->regs[0] = (unsigned long)v;
+                regs->regs[0] = (unsigned long)v;
 #endif
+            }
         }
     } else if (!strcmp(name, target_usb)) {
-        if (!strcmp(attr, "input_current_limit") && g_targets.usb_input_current_limit_ua > 0) {
-            v = scnprintf(args->buf, PAGE_SIZE, "%d\n", g_targets.usb_input_current_limit_ua);
+        if (!strcmp(attr, "input_current_limit")) {
+            int target = READ_ONCE(g_targets.usb_input_current_limit_ua);
+            if (target > 0) {
+                v = scnprintf(args->buf, PAGE_SIZE, "%d\n", target);
 #if defined(CONFIG_ARM64)
-            regs->regs[0] = (unsigned long)v;
+                regs->regs[0] = (unsigned long)v;
 #endif
-        } else if (!strcmp(attr, "input_voltage_limit") && g_targets.usb_input_voltage_limit_uv > 0) {
-            v = scnprintf(args->buf, PAGE_SIZE, "%d\n", g_targets.usb_input_voltage_limit_uv);
+            }
+        } else if (!strcmp(attr, "input_voltage_limit")) {
+            int target = READ_ONCE(g_targets.usb_input_voltage_limit_uv);
+            if (target > 0) {
+                v = scnprintf(args->buf, PAGE_SIZE, "%d\n", target);
 #if defined(CONFIG_ARM64)
-            regs->regs[0] = (unsigned long)v;
+                regs->regs[0] = (unsigned long)v;
 #endif
+            }
         }
     }
-    // mutex_unlock(&g_lock); // REMOVED
     return 0;
 }
 
@@ -825,32 +854,40 @@ static int __init chg_override_init(void)
     if (!proc_entry)
         return -ENOMEM;
 
-    memset(&ps_show_kretprobe, 0, sizeof(ps_show_kretprobe));
-    ps_show_kretprobe.handler = show_ret_handler;
-    ps_show_kretprobe.entry_handler = show_entry_handler;
-    ps_show_kretprobe.data_size = sizeof(struct ps_show_args);
-    ps_show_kretprobe.maxactive = 32;
-    ps_show_kretprobe.kp.symbol_name = "power_supply_show_property";
-    ret = register_kretprobe(&ps_show_kretprobe);
-    if (ret) {
-        pr_err("chg_param_override: register show kretprobe failed %d\n", ret);
-        remove_proc_entry("chg_param_override", NULL);
-        return ret;
+    /* 注册 power_supply_show_property 覆盖（可选，可能与非 QTI 平台不兼容） */
+    if (enable_show_override) {
+        memset(&ps_show_kretprobe, 0, sizeof(ps_show_kretprobe));
+        ps_show_kretprobe.handler = show_ret_handler;
+        ps_show_kretprobe.entry_handler = show_entry_handler;
+        ps_show_kretprobe.data_size = sizeof(struct ps_show_args);
+        ps_show_kretprobe.maxactive = 32;
+        ps_show_kretprobe.kp.symbol_name = "power_supply_show_property";
+        ret = register_kretprobe(&ps_show_kretprobe);
+        if (ret) {
+            /* 非致命错误：如果找不到符号，仅禁用显示覆盖功能 */
+            pr_warn("chg_param_override: power_supply_show_property symbol not found or hook failed (%d), show override disabled\n", ret);
+        } else {
+            ps_show_kretprobe_registered = true;
+            pr_info("chg_param_override: power_supply_show_property hooked\n");
+        }
     }
 
     /* 注册 pd_verifed_show 覆盖（可选，仅高通平台有效） */
-    memset(&pd_show_kretprobe, 0, sizeof(pd_show_kretprobe));
-    pd_show_kretprobe.handler = pd_show_ret;
-    pd_show_kretprobe.entry_handler = pd_show_entry;
-    pd_show_kretprobe.data_size = sizeof(struct class_show_args);
-    pd_show_kretprobe.maxactive = 16;
-    pd_show_kretprobe.kp.symbol_name = "pd_verifed_show";
-    ret = register_kretprobe(&pd_show_kretprobe);
-    if (ret) {
-        /* 非致命错误：如果找不到符号，仅禁用 PD 覆盖功能 */
-        pr_warn("chg_param_override: pd_verifed_show symbol not found or hook failed (%d), PD override disabled\n", ret);
-    } else {
-        pr_info("chg_param_override: pd_verifed_show hooked\n");
+    if (enable_pd_show_override) {
+        memset(&pd_show_kretprobe, 0, sizeof(pd_show_kretprobe));
+        pd_show_kretprobe.handler = pd_show_ret;
+        pd_show_kretprobe.entry_handler = pd_show_entry;
+        pd_show_kretprobe.data_size = sizeof(struct class_show_args);
+        pd_show_kretprobe.maxactive = 16;
+        pd_show_kretprobe.kp.symbol_name = "pd_verifed_show";
+        ret = register_kretprobe(&pd_show_kretprobe);
+        if (ret) {
+            /* 非致命错误：如果找不到符号，仅禁用 PD 覆盖功能 */
+            pr_warn("chg_param_override: pd_verifed_show symbol not found or hook failed (%d), PD override disabled\n", ret);
+        } else {
+            pd_show_kretprobe_registered = true;
+            pr_info("chg_param_override: pd_verifed_show hooked\n");
+        }
     }
 
     /* 第一层和第二层拦截已禁用，仅使用第三层拦截（pmic_glink_write） */
@@ -883,16 +920,21 @@ static int __init chg_override_init(void)
     }
 #endif
 
-    /* 注册 pmic_glink_write 拦截（用于直接修改发送给电源IC的消息，绕过所有驱动检查） */
-    memset(&pmic_glink_write_kprobe, 0, sizeof(pmic_glink_write_kprobe));
-    pmic_glink_write_kprobe.symbol_name = "pmic_glink_write";
-    pmic_glink_write_kprobe.pre_handler = pmic_glink_write_entry_handler;
-    ret = register_kprobe(&pmic_glink_write_kprobe);
-    if (ret) {
-        /* 非致命错误：如果找不到符号，仅禁用 pmic_glink_write 拦截 */
-        pr_warn("chg_param_override: pmic_glink_write symbol not found or hook failed (%d), pmic_glink_write interception disabled\n", ret);
+    /* 注册 pmic_glink_write 拦截（默认关闭，若内核消息结构不匹配极易导致重启） */
+    if (enable_pmic_glink_override) {
+        memset(&pmic_glink_write_kprobe, 0, sizeof(pmic_glink_write_kprobe));
+        pmic_glink_write_kprobe.symbol_name = "pmic_glink_write";
+        pmic_glink_write_kprobe.pre_handler = pmic_glink_write_entry_handler;
+        ret = register_kprobe(&pmic_glink_write_kprobe);
+        if (ret) {
+            /* 非致命错误：如果找不到符号，仅禁用 pmic_glink_write 拦截 */
+            pr_warn("chg_param_override: pmic_glink_write symbol not found or hook failed (%d), pmic_glink_write interception disabled\n", ret);
+        } else {
+            pmic_glink_write_kprobe_registered = true;
+            pr_info("chg_param_override: pmic_glink_write hooked (will intercept and modify messages to power IC)\n");
+        }
     } else {
-        pr_info("chg_param_override: pmic_glink_write hooked (will intercept and modify messages to power IC)\n");
+        pr_info("chg_param_override: pmic_glink_write interception disabled by default (set enable_pmic_glink_override=1 to enable)\n");
     }
 
     /* 初始化监控定时器 */
@@ -926,14 +968,17 @@ static void __exit chg_override_exit(void)
     power_supply_unreg_notifier(&psy_nb);
     cancel_delayed_work_sync(&reapply_work);
     del_timer_sync(&monitor_timer);
-    unregister_kretprobe(&pd_show_kretprobe);
-    unregister_kretprobe(&ps_show_kretprobe);
+    if (pd_show_kretprobe_registered)
+        unregister_kretprobe(&pd_show_kretprobe);
+    if (ps_show_kretprobe_registered)
+        unregister_kretprobe(&ps_show_kretprobe);
 #if 0
     /* 第一层和第二层拦截已禁用 */
     unregister_kretprobe(&ps_set_kretprobe);
     unregister_kprobe(&ps_set_kprobe);
 #endif
-    unregister_kprobe(&pmic_glink_write_kprobe);
+    if (pmic_glink_write_kprobe_registered)
+        unregister_kprobe(&pmic_glink_write_kprobe);
     remove_proc_entry("chg_param_override", NULL);
     pr_info("chg_param_override: unloaded\n");
 }
