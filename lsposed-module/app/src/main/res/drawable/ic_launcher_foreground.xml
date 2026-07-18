@@ -1,17 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Stylized lightning bolt as battery power symbol -->
     <group
-        android:scaleX="0.9"
-        android:scaleY="0.9"
-        android:translateX="5.4"
-        android:translateY="5.4">
+        android:scaleX="0.85"
+        android:scaleY="0.85"
+        android:translateX="8.1"
+        android:translateY="8.1">
+        <!-- 电池外框 -->
         <path
             android:fillColor="#FFFFFFFF"
             android:fillType="nonZero"
-            android:pathData="M48,12 L28,52 H44 L26,96 L80,44 H60 L80,12 Z"/>
+            android:pathData="M32,20 L32,12 L76,12 L76,20 C84,20 90,26 90,34 L90,82 C90,90 84,96 76,96 L32,96 C24,96 18,90 18,82 L18,34 C18,26 24,20 32,20 Z M28,30 L28,86 L80,86 L80,30 L28,30 Z M62,14 L62,20 L46,20 L46,14 L62,14 Z"/>
+        <!-- 闪电 -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillType="nonZero"
+            android:pathData="M58,36 L40,58 H52 L46,80 L70,52 H58 L64,36 Z"/>
     </group>
 </vector>

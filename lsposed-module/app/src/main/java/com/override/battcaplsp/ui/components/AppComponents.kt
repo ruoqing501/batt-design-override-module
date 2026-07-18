@@ -599,6 +599,77 @@ fun EmptyState(
     }
 }
 
+/** 顶部模块状态 Hero 卡片（电池/充电通用） */
+@Composable
+fun ModuleHeroCard(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    loaded: Boolean,
+    isLoading: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val gradient = if (loaded) {
+        Brush.horizontalGradient(
+            colors = listOf(
+                ColorRoles.successContainer.copy(alpha = 0.7f),
+                MaterialTheme.colorScheme.surfaceContainerLow
+            )
+        )
+    } else {
+        Brush.horizontalGradient(
+            colors = listOf(
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                MaterialTheme.colorScheme.surfaceContainerLow
+            )
+        )
+    }
+    val iconBg = if (loaded) ColorRoles.successContainer else MaterialTheme.colorScheme.primaryContainer
+    val iconTint = if (loaded) ColorRoles.onSuccessContainer else MaterialTheme.colorScheme.primary
+    AppCard(modifier = modifier, gradient = gradient) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceMedium)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(MaterialTheme.shapes.extraLarge)
+                    .background(iconBg),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+                } else {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                        tint = iconTint
+                    )
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = if (loaded) "已加载 · 参数生效中" else "未加载 · 请配置后加载模块",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            StatusBadge(
+                if (loaded) "SUCCESS:运行中" else "INFO:待加载",
+                showLabel = if (loaded) "正常" else "未启动"
+            )
+        }
+    }
+}
+
 /** 错误状态：图标 + 标题 + 说明 + 重试按钮 */
 @Composable
 fun ErrorState(

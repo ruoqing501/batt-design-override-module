@@ -138,45 +138,24 @@ fun ChargingScreen(repo: ChgParamRepository, mgr: ChgModuleManager) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(AppDimensions.SpaceMedium)
         ) {
-            AppCard {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceMedium)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(MaterialTheme.shapes.extraLarge)
-                            .background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ElectricBolt,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        SectionHeader(title = "充电模块控制")
-                    }
-                    StatusBadge(if (ui.loaded) "SUCCESS:已加载" else "INFO:未加载")
-                }
-            }
+            ModuleHeroCard(
+                title = "充电模块",
+                icon = Icons.Default.ElectricBolt,
+                loaded = ui.loaded
+            )
 
             AppCard {
                 SectionHeader(
-                    title = "基础配置",
-                    icon = Icons.Default.Usb,
-                    description = "电池与 USB power_supply 节点名称"
+                    title = "参数设置",
+                    icon = Icons.Default.Tune,
+                    description = "配置充电模块工作参数"
                 )
                 Spacer(Modifier.height(AppDimensions.SpaceSmall))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         batt, { batt = it },
                         label = { Text("电池节点") },
-                        supportingText = { Text("内核 power_supply 设备名称，通常为 battery") },
+                        supportingText = { Text("通常为 battery") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         shape = MaterialTheme.shapes.large
@@ -185,25 +164,17 @@ fun ChargingScreen(repo: ChgParamRepository, mgr: ChgModuleManager) {
                     OutlinedTextField(
                         usb, { usb = it },
                         label = { Text("USB 节点") },
-                        supportingText = { Text("USB 电源设备名称，通常为 usb") },
+                        supportingText = { Text("通常为 usb") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         shape = MaterialTheme.shapes.large
                     )
                 }
-            }
-
-            AppCard {
-                SectionHeader(
-                    title = "电池充电参数",
-                    icon = Icons.Default.BatteryChargingFull,
-                    description = "电压、电流与充电限制"
-                )
                 Spacer(Modifier.height(AppDimensions.SpaceSmall))
                 OutlinedTextField(
                     vMax, { vMax = it },
                     label = { Text("目标电压 (V)") },
-                    supportingText = { Text("充电目标电压，例: 4.46 (范围: ${ChgParamValidator.getVoltageMaxRange()})") },
+                    supportingText = { Text("例: 4.46 (范围: ${ChgParamValidator.getVoltageMaxRange()})") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     shape = MaterialTheme.shapes.large,
@@ -217,7 +188,7 @@ fun ChargingScreen(repo: ChgParamRepository, mgr: ChgModuleManager) {
                     OutlinedTextField(
                         ccc, { ccc = it },
                         label = { Text("恒流电流 (mA)") },
-                        supportingText = { Text("恒流充电阶段电流，范围: ${ChgParamValidator.getCccRange()}") },
+                        supportingText = { Text("范围: ${ChgParamValidator.getCccRange()}") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         shape = MaterialTheme.shapes.large,
@@ -230,7 +201,7 @@ fun ChargingScreen(repo: ChgParamRepository, mgr: ChgModuleManager) {
                     OutlinedTextField(
                         term, { term = it },
                         label = { Text("终止电流 (mA)") },
-                        supportingText = { Text("充电终止判断电流，范围: ${ChgParamValidator.getTermRange()}") },
+                        supportingText = { Text("范围: ${ChgParamValidator.getTermRange()}") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         shape = MaterialTheme.shapes.large,
@@ -244,7 +215,7 @@ fun ChargingScreen(repo: ChgParamRepository, mgr: ChgModuleManager) {
                 OutlinedTextField(
                     limit, { limit = it },
                     label = { Text("充电限制 (%)") },
-                    supportingText = { Text("充电上限百分比，范围: ${ChgParamValidator.getChargeLimitRange()}，0 表示不限制") },
+                    supportingText = { Text("范围: ${ChgParamValidator.getChargeLimitRange()}，0 表示不限制") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     shape = MaterialTheme.shapes.large,
@@ -252,20 +223,12 @@ fun ChargingScreen(repo: ChgParamRepository, mgr: ChgModuleManager) {
                         !ChgParamValidator.validateChargeLimit(v).first
                     } ?: false
                 )
-            }
-
-            AppCard {
-                SectionHeader(
-                    title = "USB 输入参数",
-                    icon = Icons.Default.Power,
-                    description = "PPS 功率控制（输入电压 × 输入电流）"
-                )
                 Spacer(Modifier.height(AppDimensions.SpaceSmall))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         icl, { icl = it },
                         label = { Text("输入电流 (mA)") },
-                        supportingText = { Text("USB 输入电流限制，范围: ${ChgParamValidator.getIclRange()}") },
+                        supportingText = { Text("范围: ${ChgParamValidator.getIclRange()}") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         shape = MaterialTheme.shapes.large,
@@ -278,7 +241,7 @@ fun ChargingScreen(repo: ChgParamRepository, mgr: ChgModuleManager) {
                     OutlinedTextField(
                         ivl, { ivl = it },
                         label = { Text("输入电压 (V)") },
-                        supportingText = { Text("PPS 输入电压限制，范围: ${ChgParamValidator.getIvlRange()}") },
+                        supportingText = { Text("范围: ${ChgParamValidator.getIvlRange()}") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         shape = MaterialTheme.shapes.large,
@@ -293,6 +256,184 @@ fun ChargingScreen(repo: ChgParamRepository, mgr: ChgModuleManager) {
                     "PPS 功率 = 输入电压 × 输入电流 (例: 9V × 2A = 18W)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                SectionDivider()
+                PreferenceSwitch(
+                    title = "详细日志 (verbose)",
+                    description = "输出更多充电模块调试日志",
+                    icon = Icons.AutoMirrored.Filled.ReceiptLong,
+                    checked = verbose,
+                    onCheckedChange = { verbose = it }
+                )
+                Spacer(Modifier.height(AppDimensions.SpaceMedium))
+                ActionButton(
+                    text = "保存并应用",
+                    icon = Icons.Default.Save,
+                    onClick = {
+                        scope.launch {
+                            try {
+                                if (!ui.loaded) {
+                                    msg = "ERROR:模块未加载"
+                                    showSnackbar("模块未加载，无法保存")
+                                    OpEvents.error("充电:模块未加载保存失败")
+                                    return@launch
+                                }
+                                val vMaxVal = vMax.text.trim().ifEmpty { "0" }.toDoubleOrNull() ?: 0.0
+                                val vMaxUv = (vMaxVal * 1_000_000).toLong()
+                                val (vMaxValid, vMaxErr) = ChgParamValidator.validateVoltageMax(vMaxUv)
+                                if (!vMaxValid) {
+                                    msg = "ERROR:${vMaxErr ?: "目标电压校验失败"}"
+                                    showSnackbar(vMaxErr ?: "目标电压校验失败")
+                                    OpEvents.error("充电:${vMaxErr ?: "目标电压校验失败"}")
+                                    return@launch
+                                }
+
+                                val cccVal = ccc.text.trim().ifEmpty { "0" }.toDoubleOrNull() ?: 0.0
+                                val cccUa = (cccVal * 1000).toLong()
+                                val (cccValid, cccErr) = ChgParamValidator.validateCcc(cccUa)
+                                if (!cccValid) {
+                                    msg = "ERROR:${cccErr ?: "恒流电流校验失败"}"
+                                    showSnackbar(cccErr ?: "恒流电流校验失败")
+                                    OpEvents.error("充电:${cccErr ?: "恒流电流校验失败"}")
+                                    return@launch
+                                }
+
+                                val termVal = term.text.trim().ifEmpty { "0" }.toDoubleOrNull() ?: 0.0
+                                val termUa = (termVal * 1000).toLong()
+                                val (termValid, termErr) = ChgParamValidator.validateTerm(termUa)
+                                if (!termValid) {
+                                    msg = "ERROR:${termErr ?: "终止电流校验失败"}"
+                                    showSnackbar(termErr ?: "终止电流校验失败")
+                                    OpEvents.error("充电:${termErr ?: "终止电流校验失败"}")
+                                    return@launch
+                                }
+
+                                val iclVal = icl.text.trim().ifEmpty { "0" }.toDoubleOrNull() ?: 0.0
+                                val iclUa = (iclVal * 1000).toLong()
+                                val (iclValid, iclErr) = ChgParamValidator.validateIcl(iclUa)
+                                if (!iclValid) {
+                                    msg = "ERROR:${iclErr ?: "输入电流校验失败"}"
+                                    showSnackbar(iclErr ?: "输入电流校验失败")
+                                    OpEvents.error("充电:${iclErr ?: "输入电流校验失败"}")
+                                    return@launch
+                                }
+
+                                val ivlVal = ivl.text.trim().ifEmpty { "0" }.toDoubleOrNull() ?: 0.0
+                                val ivlUv = (ivlVal * 1_000_000).toLong()
+                                val (ivlValid, ivlErr) = ChgParamValidator.validateIvl(ivlUv)
+                                if (!ivlValid) {
+                                    msg = "ERROR:${ivlErr ?: "输入电压校验失败"}"
+                                    showSnackbar(ivlErr ?: "输入电压校验失败")
+                                    OpEvents.error("充电:${ivlErr ?: "输入电压校验失败"}")
+                                    return@launch
+                                }
+
+                                val limitVal = limit.text.trim().ifEmpty { "0" }.toIntOrNull() ?: 0
+                                val (limitValid, limitErr) = ChgParamValidator.validateChargeLimit(limitVal)
+                                if (!limitValid) {
+                                    msg = "ERROR:${limitErr ?: "充电限制校验失败"}"
+                                    showSnackbar(limitErr ?: "充电限制校验失败")
+                                    OpEvents.error("充电:${limitErr ?: "充电限制校验失败"}")
+                                    return@launch
+                                }
+
+                                val clampedVMax = ChgParamValidator.clampVoltageMax(vMaxUv)
+                                val clampedCcc = ChgParamValidator.clampCcc(cccUa)
+                                val clampedTerm = ChgParamValidator.clampTerm(termUa)
+                                val clampedIcl = ChgParamValidator.clampIcl(iclUa)
+                                val clampedIvl = ChgParamValidator.clampIvl(ivlUv)
+                                val clampedLimit = ChgParamValidator.clampChargeLimit(limitVal)
+                                repo.update {
+                                    it.copy(
+                                        koPath = koPath.text.trim(),
+                                        batt = batt.text.trim(),
+                                        usb = usb.text.trim(),
+                                        voltageMax = clampedVMax,
+                                        ccc = clampedCcc,
+                                        term = clampedTerm,
+                                        icl = clampedIcl,
+                                        ivl = clampedIvl,
+                                        chargeLimit = clampedLimit,
+                                        verbose = verbose
+                                    )
+                                }
+                                val applyRes = mgr.applyBatch(
+                                    mapOf(
+                                        "batt" to batt.text.trim(),
+                                        "usb" to usb.text.trim(),
+                                        "voltage_max" to clampedVMax.toString(),
+                                        "ccc" to clampedCcc.toString(),
+                                        "term" to clampedTerm.toString(),
+                                        "icl" to clampedIcl.toString(),
+                                        "ivl" to clampedIvl.toString(),
+                                        "charge_limit" to clampedLimit.toString()
+                                    )
+                                )
+                                if (applyRes.code == 0) {
+                                    ConfigSync.syncChg(
+                                        context,
+                                        batt.text.trim(), usb.text.trim(),
+                                        clampedVMax, clampedCcc, clampedTerm,
+                                        clampedIcl, clampedIvl, clampedLimit,
+                                        verbose, 1
+                                    )
+                                    msg = "SUCCESS:保存并应用完成"
+                                    showSnackbar("保存并应用完成")
+                                    OpEvents.success("充电:保存并应用成功")
+                                } else {
+                                    val detail = ResultFormatter.formatApplyResult(applyRes)
+                                    val isIclIvlError = (iclVal > 0 || ivlVal > 0) && applyRes.err.contains(
+                                        "ICL",
+                                        ignoreCase = true
+                                    ) ||
+                                            applyRes.err.contains("IVL", ignoreCase = true) ||
+                                            applyRes.err.contains("-22", ignoreCase = true) ||
+                                            applyRes.err.contains("EINVAL", ignoreCase = true)
+                                    if (isIclIvlError) {
+                                        val usbOnline = try {
+                                            val usbPath = "/sys/class/power_supply/${usb.text.trim().ifEmpty { "usb" }}/online"
+                                            val onlineCheck = RootShell.exec("cat $usbPath 2>/dev/null || echo '0'")
+                                            onlineCheck.out.trim() == "1"
+                                        } catch (e: Exception) {
+                                            false
+                                        }
+                                        val hasKprobe = try {
+                                            val kprobeCheck = RootShell.exec("dmesg | grep -E 'power_supply_set_property.*hooked|pmic_glink_write.*hooked' | tail -2 || true")
+                                            kprobeCheck.out.contains("hooked")
+                                        } catch (e: Exception) {
+                                            false
+                                        }
+                                        val hasPmicGlink = try {
+                                            val pmicCheck = RootShell.exec("dmesg | grep -E 'pmic_glink_write.*hooked' | tail -1 || true")
+                                            pmicCheck.out.contains("pmic_glink_write") && pmicCheck.out.contains("hooked")
+                                        } catch (e: Exception) {
+                                            false
+                                        }
+                                        val errorHint = when {
+                                            !usbOnline -> "提示：USB设备未连接，某些设备需要在连接充电器时才能设置输入限制参数。"
+                                            hasPmicGlink -> "提示：内核模块已启用pmic_glink_write拦截功能，已直接修改发送给电源IC的消息。\n即使驱动返回错误，内核模块也会绕过所有检查，直接向电源IC发送修改后的参数值。\n这是最底层的拦截方式，应该能够成功设置参数。"
+                                            hasKprobe -> "提示：内核模块已启用kprobe拦截功能，已尝试拦截并覆盖参数值。\n即使驱动不支持，内核模块也会尝试通过拦截方式设置参数。\n如果仍然失败，可能是硬件限制或值超出支持范围。"
+                                            else -> "提示：设备可能不支持输入电流/电压限制功能，或值超出硬件支持范围。\n请检查设备是否支持PPS充电，或确认内核模块是否启用了kprobe拦截功能。"
+                                        }
+                                        msg = "WARN:保存完成，但应用失败: ${com.override.battcaplsp.core.TextAbbrev.middle(detail, 120)}\n$errorHint"
+                                        showSnackbar("保存完成，但应用失败")
+                                        OpEvents.error("充电:写内核失败-ICL/IVL")
+                                    } else {
+                                        msg = if (detail.contains("失败")) {
+                                            OpEvents.error("充电:写内核失败")
+                                            "WARN:保存完成，但应用失败: ${com.override.battcaplsp.core.TextAbbrev.middle(detail, 160)}"
+                                        } else detail
+                                        showSnackbar("保存完成，但应用失败")
+                                    }
+                                }
+                            } catch (t: Throwable) {
+                                msg = "ERROR:保存异常 ${t.message}"
+                                showSnackbar("保存异常: ${t.message}")
+                                OpEvents.error("充电:保存异常 ${t.message}")
+                            }
+                        }
+                    },
+                    enabled = ui.loaded
                 )
             }
 
@@ -356,192 +497,13 @@ fun ChargingScreen(repo: ChgParamRepository, mgr: ChgModuleManager) {
             }
 
             AppCard {
-                PreferenceSwitch(
-                    title = "详细日志 (verbose)",
-                    description = "输出更多充电模块调试日志",
-                    icon = Icons.AutoMirrored.Filled.ReceiptLong,
-                    checked = verbose,
-                    onCheckedChange = { verbose = it }
-                )
-            }
-
-            AppCard {
                 SectionHeader(
                     title = "模块操作",
                     icon = Icons.Default.BuildCircle,
-                    description = "加载、卸载、保存与日志"
+                    description = "加载、卸载与查看日志"
                 )
                 Spacer(Modifier.height(AppDimensions.SpaceSmall))
                 ButtonRow {
-                    ActionButton(
-                        text = "保存并应用",
-                        icon = Icons.Default.Save,
-                        onClick = {
-                            scope.launch {
-                                try {
-                                    if (!ui.loaded) {
-                                        msg = "ERROR:模块未加载"
-                                        showSnackbar("模块未加载，无法保存")
-                                        OpEvents.error("充电:模块未加载保存失败")
-                                        return@launch
-                                    }
-                                    val vMaxVal = vMax.text.trim().ifEmpty { "0" }.toDoubleOrNull() ?: 0.0
-                                    val vMaxUv = (vMaxVal * 1_000_000).toLong()
-                                    val (vMaxValid, vMaxErr) = ChgParamValidator.validateVoltageMax(vMaxUv)
-                                    if (!vMaxValid) {
-                                        msg = "ERROR:${vMaxErr ?: "目标电压校验失败"}"
-                                        showSnackbar(vMaxErr ?: "目标电压校验失败")
-                                        OpEvents.error("充电:${vMaxErr ?: "目标电压校验失败"}")
-                                        return@launch
-                                    }
-
-                                    val cccVal = ccc.text.trim().ifEmpty { "0" }.toDoubleOrNull() ?: 0.0
-                                    val cccUa = (cccVal * 1000).toLong()
-                                    val (cccValid, cccErr) = ChgParamValidator.validateCcc(cccUa)
-                                    if (!cccValid) {
-                                        msg = "ERROR:${cccErr ?: "恒流电流校验失败"}"
-                                        showSnackbar(cccErr ?: "恒流电流校验失败")
-                                        OpEvents.error("充电:${cccErr ?: "恒流电流校验失败"}")
-                                        return@launch
-                                    }
-
-                                    val termVal = term.text.trim().ifEmpty { "0" }.toDoubleOrNull() ?: 0.0
-                                    val termUa = (termVal * 1000).toLong()
-                                    val (termValid, termErr) = ChgParamValidator.validateTerm(termUa)
-                                    if (!termValid) {
-                                        msg = "ERROR:${termErr ?: "终止电流校验失败"}"
-                                        showSnackbar(termErr ?: "终止电流校验失败")
-                                        OpEvents.error("充电:${termErr ?: "终止电流校验失败"}")
-                                        return@launch
-                                    }
-
-                                    val iclVal = icl.text.trim().ifEmpty { "0" }.toDoubleOrNull() ?: 0.0
-                                    val iclUa = (iclVal * 1000).toLong()
-                                    val (iclValid, iclErr) = ChgParamValidator.validateIcl(iclUa)
-                                    if (!iclValid) {
-                                        msg = "ERROR:${iclErr ?: "输入电流校验失败"}"
-                                        showSnackbar(iclErr ?: "输入电流校验失败")
-                                        OpEvents.error("充电:${iclErr ?: "输入电流校验失败"}")
-                                        return@launch
-                                    }
-
-                                    val ivlVal = ivl.text.trim().ifEmpty { "0" }.toDoubleOrNull() ?: 0.0
-                                    val ivlUv = (ivlVal * 1_000_000).toLong()
-                                    val (ivlValid, ivlErr) = ChgParamValidator.validateIvl(ivlUv)
-                                    if (!ivlValid) {
-                                        msg = "ERROR:${ivlErr ?: "输入电压校验失败"}"
-                                        showSnackbar(ivlErr ?: "输入电压校验失败")
-                                        OpEvents.error("充电:${ivlErr ?: "输入电压校验失败"}")
-                                        return@launch
-                                    }
-
-                                    val limitVal = limit.text.trim().ifEmpty { "0" }.toIntOrNull() ?: 0
-                                    val (limitValid, limitErr) = ChgParamValidator.validateChargeLimit(limitVal)
-                                    if (!limitValid) {
-                                        msg = "ERROR:${limitErr ?: "充电限制校验失败"}"
-                                        showSnackbar(limitErr ?: "充电限制校验失败")
-                                        OpEvents.error("充电:${limitErr ?: "充电限制校验失败"}")
-                                        return@launch
-                                    }
-
-                                    val clampedVMax = ChgParamValidator.clampVoltageMax(vMaxUv)
-                                    val clampedCcc = ChgParamValidator.clampCcc(cccUa)
-                                    val clampedTerm = ChgParamValidator.clampTerm(termUa)
-                                    val clampedIcl = ChgParamValidator.clampIcl(iclUa)
-                                    val clampedIvl = ChgParamValidator.clampIvl(ivlUv)
-                                    val clampedLimit = ChgParamValidator.clampChargeLimit(limitVal)
-                                    repo.update {
-                                        it.copy(
-                                            koPath = koPath.text.trim(),
-                                            batt = batt.text.trim(),
-                                            usb = usb.text.trim(),
-                                            voltageMax = clampedVMax,
-                                            ccc = clampedCcc,
-                                            term = clampedTerm,
-                                            icl = clampedIcl,
-                                            ivl = clampedIvl,
-                                            chargeLimit = clampedLimit,
-                                            verbose = verbose
-                                        )
-                                    }
-                                    val applyRes = mgr.applyBatch(
-                                        mapOf(
-                                            "batt" to batt.text.trim(),
-                                            "usb" to usb.text.trim(),
-                                            "voltage_max" to clampedVMax.toString(),
-                                            "ccc" to clampedCcc.toString(),
-                                            "term" to clampedTerm.toString(),
-                                            "icl" to clampedIcl.toString(),
-                                            "ivl" to clampedIvl.toString(),
-                                            "charge_limit" to clampedLimit.toString()
-                                        )
-                                    )
-                                    if (applyRes.code == 0) {
-                                        ConfigSync.syncChg(
-                                            context,
-                                            batt.text.trim(), usb.text.trim(),
-                                            clampedVMax, clampedCcc, clampedTerm,
-                                            clampedIcl, clampedIvl, clampedLimit,
-                                            verbose, 1
-                                        )
-                                        msg = "SUCCESS:保存并应用完成"
-                                        showSnackbar("保存并应用完成")
-                                        OpEvents.success("充电:保存并应用成功")
-                                    } else {
-                                        val detail = ResultFormatter.formatApplyResult(applyRes)
-                                        val isIclIvlError = (iclVal > 0 || ivlVal > 0) && applyRes.err.contains(
-                                            "ICL",
-                                            ignoreCase = true
-                                        ) ||
-                                                applyRes.err.contains("IVL", ignoreCase = true) ||
-                                                applyRes.err.contains("-22", ignoreCase = true) ||
-                                                applyRes.err.contains("EINVAL", ignoreCase = true)
-                                        if (isIclIvlError) {
-                                            val usbOnline = try {
-                                                val usbPath = "/sys/class/power_supply/${usb.text.trim().ifEmpty { "usb" }}/online"
-                                                val onlineCheck = RootShell.exec("cat $usbPath 2>/dev/null || echo '0'")
-                                                onlineCheck.out.trim() == "1"
-                                            } catch (e: Exception) {
-                                                false
-                                            }
-                                            val hasKprobe = try {
-                                                val kprobeCheck = RootShell.exec("dmesg | grep -E 'power_supply_set_property.*hooked|pmic_glink_write.*hooked' | tail -2 || true")
-                                                kprobeCheck.out.contains("hooked")
-                                            } catch (e: Exception) {
-                                                false
-                                            }
-                                            val hasPmicGlink = try {
-                                                val pmicCheck = RootShell.exec("dmesg | grep -E 'pmic_glink_write.*hooked' | tail -1 || true")
-                                                pmicCheck.out.contains("pmic_glink_write") && pmicCheck.out.contains("hooked")
-                                            } catch (e: Exception) {
-                                                false
-                                            }
-                                            val errorHint = when {
-                                                !usbOnline -> "提示：USB设备未连接，某些设备需要在连接充电器时才能设置输入限制参数。"
-                                                hasPmicGlink -> "提示：内核模块已启用pmic_glink_write拦截功能，已直接修改发送给电源IC的消息。\n即使驱动返回错误，内核模块也会绕过所有检查，直接向电源IC发送修改后的参数值。\n这是最底层的拦截方式，应该能够成功设置参数。"
-                                                hasKprobe -> "提示：内核模块已启用kprobe拦截功能，已尝试拦截并覆盖参数值。\n即使驱动不支持，内核模块也会尝试通过拦截方式设置参数。\n如果仍然失败，可能是硬件限制或值超出支持范围。"
-                                                else -> "提示：设备可能不支持输入电流/电压限制功能，或值超出硬件支持范围。\n请检查设备是否支持PPS充电，或确认内核模块是否启用了kprobe拦截功能。"
-                                            }
-                                            msg = "WARN:保存完成，但应用失败: ${com.override.battcaplsp.core.TextAbbrev.middle(detail, 120)}\n$errorHint"
-                                            showSnackbar("保存完成，但应用失败")
-                                            OpEvents.error("充电:写内核失败-ICL/IVL")
-                                        } else {
-                                            msg = if (detail.contains("失败")) {
-                                                OpEvents.error("充电:写内核失败")
-                                                "WARN:保存完成，但应用失败: ${com.override.battcaplsp.core.TextAbbrev.middle(detail, 160)}"
-                                            } else detail
-                                            showSnackbar("保存完成，但应用失败")
-                                        }
-                                    }
-                                } catch (t: Throwable) {
-                                    msg = "ERROR:保存异常 ${t.message}"
-                                    showSnackbar("保存异常: ${t.message}")
-                                    OpEvents.error("充电:保存异常 ${t.message}")
-                                }
-                            }
-                        },
-                        enabled = ui.loaded
-                    )
                     ActionButton(
                         text = "加载模块",
                         icon = Icons.Default.Power,
@@ -607,100 +569,53 @@ fun ChargingScreen(repo: ChgParamRepository, mgr: ChgModuleManager) {
                     )
                 }
                 Spacer(Modifier.height(AppDimensions.SpaceSmall))
-                ButtonRow {
-                    ActionButton(
-                        text = "查看内核日志",
-                        icon = Icons.Default.Terminal,
-                        onClick = {
-                            scope.launch {
-                                try {
-                                    val cmd = "(dmesg | grep -E 'chg_param_override' || true)"
-                                    var res = RootShell.exec(cmd)
-                                    var lines = res.out.split('\n').filter { it.isNotBlank() }
-                                    if (lines.isEmpty()) {
-                                        val fallback = RootShell.exec("logcat -b kernel -d | grep -E 'chg_param_override' || true")
-                                        if (fallback.out.isNotBlank()) {
-                                            res = fallback
-                                            lines = fallback.out.split('\n').filter { it.isNotBlank() }
-                                        } else if (fallback.err.isNotBlank() && res.err.isBlank()) {
-                                            res = fallback
-                                        }
+                ActionButton(
+                    text = "查看内核日志",
+                    icon = Icons.Default.Terminal,
+                    onClick = {
+                        scope.launch {
+                            try {
+                                val cmd = "(dmesg | grep -E 'chg_param_override' || true)"
+                                var res = RootShell.exec(cmd)
+                                var lines = res.out.split('\n').filter { it.isNotBlank() }
+                                if (lines.isEmpty()) {
+                                    val fallback = RootShell.exec("logcat -b kernel -d | grep -E 'chg_param_override' || true")
+                                    if (fallback.out.isNotBlank()) {
+                                        res = fallback
+                                        lines = fallback.out.split('\n').filter { it.isNotBlank() }
+                                    } else if (fallback.err.isNotBlank() && res.err.isBlank()) {
+                                        res = fallback
                                     }
-                                    if (lines.isNotEmpty()) {
-                                        val tail = if (lines.size > 300) lines.takeLast(300) else lines
-                                        kernelLog = tail.joinToString("\n")
-                                        msg = "SUCCESS:内核日志读取成功 (${tail.size} 行, 显示末尾)"
-                                        OpEvents.success("充电:读取日志 ${tail.size}")
-                                    } else {
-                                        kernelLog = ""
-                                        msg = if (res.err.isNotBlank()) {
-                                            OpEvents.warn("充电:日志stderr有输出")
-                                            "WARN:未获取到匹配日志 (stderr: ${com.override.battcaplsp.core.TextAbbrev.middle(res.err, 120)})"
-                                        } else {
-                                            OpEvents.info("充电:日志无匹配")
-                                            "INFO:没有匹配到包含 chg_param_override 的日志"
-                                        }
-                                    }
-                                } catch (t: Throwable) {
+                                }
+                                if (lines.isNotEmpty()) {
+                                    val tail = if (lines.size > 300) lines.takeLast(300) else lines
+                                    kernelLog = tail.joinToString("\n")
+                                    msg = "SUCCESS:内核日志读取成功 (${tail.size} 行, 显示末尾)"
+                                    OpEvents.success("充电:读取日志 ${tail.size}")
+                                } else {
                                     kernelLog = ""
-                                    msg = "ERROR:日志读取异常 ${t.message}"
-                                    OpEvents.error("充电:日志异常 ${t.message}")
-                                }
-                            }
-                        },
-                        secondary = true
-                    )
-                    ActionButton(
-                        text = "读取当前参数",
-                        icon = Icons.Default.Download,
-                        onClick = {
-                            scope.launch {
-                                try {
-                                    if (!mgr.isLoaded()) {
-                                        msg = "ERROR:模块未加载，无法读取参数"
-                                        showSnackbar("模块未加载，无法读取参数")
-                                        OpEvents.error("充电:读取参数失败未加载")
-                                        return@launch
+                                    msg = if (res.err.isNotBlank()) {
+                                        OpEvents.warn("充电:日志stderr有输出")
+                                        "WARN:未获取到匹配日志 (stderr: ${com.override.battcaplsp.core.TextAbbrev.middle(res.err, 120)})"
+                                    } else {
+                                        OpEvents.info("充电:日志无匹配")
+                                        "INFO:没有匹配到包含 chg_param_override 的日志"
                                     }
-                                    val m = mgr.readCurrent()
-                                    m["batt"]?.let { batt = TextFieldValue(it) }
-                                    m["usb"]?.let { usb = TextFieldValue(it) }
-                                    m["voltage_max"]?.toLongOrNull()
-                                        ?.let { vMax = TextFieldValue((it / 1_000_000.0).toString()) }
-                                    m["ccc"]?.toLongOrNull()?.let { ccc = TextFieldValue((it / 1000).toString()) }
-                                    m["term"]?.toLongOrNull()?.let { term = TextFieldValue((it / 1000).toString()) }
-                                    m["icl"]?.toLongOrNull()?.let { icl = TextFieldValue((it / 1000).toString()) }
-                                    m["ivl"]?.toLongOrNull()
-                                        ?.let { ivl = TextFieldValue((it / 1_000_000.0).toString()) }
-                                    m["input_voltage_limit"]?.toLongOrNull()
-                                        ?.let { ivl = TextFieldValue((it / 1_000_000.0).toString()) }
-                                    m["charge_limit"]?.toIntOrNull()?.let { limit = TextFieldValue(it.toString()) }
-                                    msg = "SUCCESS:当前参数读取成功"
-                                    showSnackbar("当前参数读取成功")
-                                    OpEvents.success("充电:读取当前参数成功")
-                                } catch (t: Throwable) {
-                                    msg = "ERROR:读取参数异常 ${t.message}"
-                                    showSnackbar("读取参数异常: ${t.message}")
-                                    OpEvents.error("充电:读取参数异常 ${t.message}")
                                 }
+                            } catch (t: Throwable) {
+                                kernelLog = ""
+                                msg = "ERROR:日志读取异常 ${t.message}"
+                                OpEvents.error("充电:日志异常 ${t.message}")
                             }
-                        },
-                        enabled = ui.loaded,
-                        secondary = true
-                    )
-                    ActionButton(
-                        text = "清空日志",
-                        icon = Icons.Default.Delete,
-                        onClick = { kernelLog = "" },
-                        secondary = true
-                    )
-                }
+                        }
+                    },
+                    secondary = true
+                )
                 if (kernelLog.isNotEmpty()) {
                     Spacer(Modifier.height(AppDimensions.SpaceSmall))
                     LogViewer(
                         title = "充电模块日志 (chg_param_override)",
                         logText = kernelLog,
-                        onClear = { kernelLog = "" },
                         maxHeight = 320
                     )
                 }

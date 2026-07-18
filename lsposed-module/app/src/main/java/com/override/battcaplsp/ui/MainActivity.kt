@@ -22,7 +22,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -40,7 +39,6 @@ import com.override.battcaplsp.ui.components.*
 import com.override.battcaplsp.ui.theme.AppAnimations
 import com.override.battcaplsp.ui.theme.AppDimensions
 import com.override.battcaplsp.ui.theme.AppTheme
-import com.override.battcaplsp.ui.theme.ColorRoles
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -257,6 +255,8 @@ class MainActivity : ComponentActivity() {
             ) {
                 item {
                     ModuleHeroCard(
+                        title = "电池模块",
+                        icon = Icons.Default.BatteryChargingFull,
                         loaded = uiState.moduleLoaded,
                         isLoading = isLoading
                     )
@@ -421,7 +421,7 @@ class MainActivity : ComponentActivity() {
                         SectionHeader(
                             title = "操作与日志",
                             icon = Icons.Default.Build,
-                            description = "加载、卸载、刷新与查看日志"
+                            description = "加载、卸载与查看日志"
                         )
                         Spacer(Modifier.height(AppDimensions.SpaceSmall))
                         ButtonRow {
@@ -508,38 +508,6 @@ class MainActivity : ComponentActivity() {
                                         } catch (t: Throwable) {
                                             opResult = "ERROR:卸载异常 ${t.message}"
                                             com.debug.battcaplsp.core.OpEvents.error("卸载异常: ${t.message}")
-                                        } finally {
-                                            isLoading = false
-                                        }
-                                    }
-                                },
-                                enabled = uiState.moduleLoaded && !isLoading,
-                                secondary = true
-                            )
-                            ActionButton(
-                                text = "刷新参数",
-                                icon = Icons.Default.Refresh,
-                                onClick = {
-                                    scope.launch {
-                                        isLoading = true
-                                        try {
-                                            val km = battMgr.readAll()
-                                            kernelMap = km
-                                            km["design_uah"]?.toLongOrNull()
-                                                ?.let { designUah = TextFieldValue((it / 1000.0).toString()) }
-                                            km["design_uwh"]?.toLongOrNull()
-                                                ?.let { designUwh = TextFieldValue((it / 1000000.0).toString()) }
-                                            km["batt_name"]?.let { battName = TextFieldValue(it) }
-                                            km["model_name"]?.let { modelName = TextFieldValue(it) }
-                                            km["override_any"]
-                                                ?.let { overrideAny = it == "Y" || it == "1" || it.equals("true", true) }
-                                            km["verbose"]
-                                                ?.let { verbose = it == "Y" || it == "1" || it.equals("true", true) }
-                                            opResult = "SUCCESS:内核参数读取成功"
-                                            com.debug.battcaplsp.core.OpEvents.success("刷新参数成功")
-                                        } catch (t: Throwable) {
-                                            opResult = "ERROR:读取失败 ${t.message}"
-                                            com.debug.battcaplsp.core.OpEvents.error("刷新参数失败: ${t.message}")
                                         } finally {
                                             isLoading = false
                                         }
@@ -637,81 +605,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @Composable
-    private fun ModuleHeroCard(loaded: Boolean, isLoading: Boolean) {
-        val gradient = if (loaded) {
-            Brush.verticalGradient(
-                colors = listOf(
-                    ColorRoles.successContainer.copy(alpha = 0.85f),
-                    ColorRoles.successContainer.copy(alpha = 0.35f),
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                )
-            )
-        } else {
-            Brush.verticalGradient(
-                colors = listOf(
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f),
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                )
-            )
-        }
-        AppCard(gradient = gradient) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                val icon = if (loaded) Icons.Default.BatteryChargingFull else Icons.Default.BatteryAlert
-                val iconContainerColor = if (loaded) ColorRoles.onSuccessContainer else MaterialTheme.colorScheme.primary
-                val iconContainerBg = if (loaded) ColorRoles.successContainer else MaterialTheme.colorScheme.primaryContainer
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(MaterialTheme.shapes.extraLarge)
-                        .background(iconContainerBg),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
-                    } else {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(40.dp),
-                            tint = iconContainerColor
-                        )
-                    }
-                }
-                Spacer(Modifier.height(AppDimensions.SpaceMedium))
-                Text(
-                    text = "电池模块",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = if (loaded) "已加载，参数正在生效" else "未加载，请配置参数后加载",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(AppDimensions.SpaceSmall))
-                StatusBadge(
-                    if (loaded) "SUCCESS:运行中" else "INFO:待加载",
-                    showLabel = if (loaded) "正常" else "未启动"
-                )
-                if (loaded) {
-                    Spacer(Modifier.height(AppDimensions.SpaceSmall))
-                    LinearProgressIndicator(
-                        progress = { 1f },
-                        modifier = Modifier
-                            .fillMaxWidth(0.6f)
-                            .height(6.dp)
-                            .clip(MaterialTheme.shapes.small),
-                        color = ColorRoles.onSuccessContainer,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
-                }
-            }
-        }
-    }
 }

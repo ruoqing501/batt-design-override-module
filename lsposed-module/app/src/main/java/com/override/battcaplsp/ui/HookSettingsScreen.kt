@@ -15,7 +15,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
@@ -1089,53 +1088,15 @@ private fun AboutSection() {
             icon = Icons.Default.Info,
             description = "应用信息、开源链接与致谢"
         )
-        Spacer(Modifier.height(AppDimensions.SpaceMedium))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceMedium)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .clip(MaterialTheme.shapes.extraLarge)
-                    .background(
-                        Brush.linearGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.primaryContainer,
-                                MaterialTheme.colorScheme.secondaryContainer
-                            )
-                        )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.BatteryChargingFull,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(36.dp)
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Battery Override Manager",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "版本 ${BuildConfig.VERSION_NAME} · ${BuildConfig.VERSION_CODE}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "作者：开源社区",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        Spacer(Modifier.height(AppDimensions.SpaceMedium))
+        Spacer(Modifier.height(AppDimensions.SpaceSmall))
+        PreferenceItem(
+            title = "Battery Design Override",
+            description = "版本 ${BuildConfig.VERSION_NAME} · ${BuildConfig.VERSION_CODE}",
+            icon = Icons.Default.BatteryChargingFull,
+            value = null,
+            onClick = null
+        )
+        SectionDivider()
         PreferenceItem(
             title = "GitHub 仓库",
             description = "查看源码、提交 Issue 与参与贡献",
@@ -1145,7 +1106,7 @@ private fun AboutSection() {
                 try {
                     val intent = android.content.Intent(
                         android.content.Intent.ACTION_VIEW,
-                        android.net.Uri.parse("https://github.com/ruoqing/batt-design-override-module")
+                        android.net.Uri.parse("https://github.com/ruoqing501/batt-design-override-module")
                     )
                     context.startActivity(intent)
                 } catch (_: Throwable) {
