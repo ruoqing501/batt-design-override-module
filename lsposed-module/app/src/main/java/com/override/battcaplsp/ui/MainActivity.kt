@@ -314,6 +314,79 @@ class MainActivity : ComponentActivity() {
                             singleLine = true,
                             shape = MaterialTheme.shapes.large
                         )
+                        Spacer(Modifier.height(AppDimensions.SpaceMedium))
+                        ActionButton(
+                            text = "保存并应用",
+                            icon = Icons.Default.Save,
+                            onClick = {
+                                scope.launch {
+                                    try {
+                                        val mAhStr = designUah.text.trim()
+                                        val whStr = designUwh.text.trim()
+                                        val uahVal =
+                                            ((mAhStr.ifEmpty { "0" }.toDoubleOrNull()
+                                                ?: 0.0) * 1000).toLong()
+                                        val uwhVal =
+                                            ((whStr.ifEmpty { "0" }.toDoubleOrNull()
+                                                ?: 0.0) * 1000000).toLong()
+                                        if (uahVal < 0 || uahVal > 20000000L) {
+                                            snackbarHostState.showSnackbar("设计容量(mAh)超出范围或格式错误 (0~20000mAh)")
+                                            com.debug.battcaplsp.core.OpEvents.warn("设计容量异常: $uahVal")
+                                            return@launch
+                                        }
+                                        if (uwhVal < 0 || uwhVal > 100000000L) {
+                                            snackbarHostState.showSnackbar("设计能量(Wh)超出范围或格式错误 (0~100Wh)")
+                                            com.debug.battcaplsp.core.OpEvents.warn("设计能量异常: $uwhVal")
+                                            return@launch
+                                        }
+                                        battRepo.update {
+                                            it.copy(
+                                                battName = battName.text.trim(),
+                                                designUah = uahVal,
+                                                designUwh = uwhVal,
+                                                modelName = modelName.text.trim(),
+                                                overrideAny = overrideAny,
+                                                verbose = verbose,
+                                                koPath = koPath.text.trim()
+                                            )
+                                        }
+                                        val tasks = listOf(
+                                            Pair("batt_name", battName.text.trim()),
+                                            Pair("design_uah", uahVal.toString()),
+                                            Pair("design_uwh", uwhVal.toString()),
+                                            Pair("model_name", modelName.text.trim()),
+                                            Pair("override_any", if (overrideAny) "1" else "0"),
+                                            Pair("verbose", if (verbose) "1" else "0")
+                                        )
+                                        var okCnt = 0
+                                        for ((k, v) in tasks) if (v.isNotEmpty()) if (battMgr.writeParam(
+                                                k,
+                                                v
+                                            )
+                                        ) okCnt++
+                                        ConfigSync.syncBatt(
+                                            context,
+                                            battName.text.trim(),
+                                            uahVal,
+                                            uwhVal,
+                                            modelName.text.trim(),
+                                            overrideAny,
+                                            verbose
+                                        )
+                                        kernelMap = battMgr.readAll()
+                                        val msg = if (okCnt > 0) "SUCCESS:保存并应用完成 (成功 $okCnt 项)" else "WARN:保存完成，但应用失败"
+                                        opResult = msg
+                                        if (okCnt > 0) com.debug.battcaplsp.core.OpEvents.success(
+                                            "保存并应用成功 ($okCnt)"
+                                        ) else com.debug.battcaplsp.core.OpEvents.warn("保存写入内核失败")
+                                    } catch (t: Throwable) {
+                                        opResult = "ERROR:保存失败 ${t.message}"
+                                        com.debug.battcaplsp.core.OpEvents.error("保存失败: ${t.message}")
+                                    }
+                                }
+                            },
+                            enabled = uiState.moduleLoaded && !isLoading
+                        )
                     }
                 }
 
@@ -348,7 +421,7 @@ class MainActivity : ComponentActivity() {
                         SectionHeader(
                             title = "操作与日志",
                             icon = Icons.Default.Build,
-                            description = "加载、卸载、刷新与保存"
+                            description = "加载、卸载、刷新与查看日志"
                         )
                         Spacer(Modifier.height(AppDimensions.SpaceSmall))
                         ButtonRow {
@@ -443,9 +516,6 @@ class MainActivity : ComponentActivity() {
                                 enabled = uiState.moduleLoaded && !isLoading,
                                 secondary = true
                             )
-                        }
-                        Spacer(Modifier.height(AppDimensions.SpaceSmall))
-                        ButtonRow {
                             ActionButton(
                                 text = "刷新参数",
                                 icon = Icons.Default.Refresh,
@@ -478,141 +548,60 @@ class MainActivity : ComponentActivity() {
                                 enabled = uiState.moduleLoaded && !isLoading,
                                 secondary = true
                             )
-                            ActionButton(
-                                text = "保存并应用",
-                                icon = Icons.Default.Save,
-                                onClick = {
-                                    scope.launch {
-                                        try {
-                                            val mAhStr = designUah.text.trim()
-                                            val whStr = designUwh.text.trim()
-                                            val uahVal =
-                                                ((mAhStr.ifEmpty { "0" }.toDoubleOrNull()
-                                                    ?: 0.0) * 1000).toLong()
-                                            val uwhVal =
-                                                ((whStr.ifEmpty { "0" }.toDoubleOrNull()
-                                                    ?: 0.0) * 1000000).toLong()
-                                            if (uahVal < 0 || uahVal > 20000000L) {
-                                                snackbarHostState.showSnackbar("设计容量(mAh)超出范围或格式错误 (0~20000mAh)")
-                                                com.debug.battcaplsp.core.OpEvents.warn("设计容量异常: $uahVal")
-                                                return@launch
-                                            }
-                                            if (uwhVal < 0 || uwhVal > 100000000L) {
-                                                snackbarHostState.showSnackbar("设计能量(Wh)超出范围或格式错误 (0~100Wh)")
-                                                com.debug.battcaplsp.core.OpEvents.warn("设计能量异常: $uwhVal")
-                                                return@launch
-                                            }
-                                            battRepo.update {
-                                                it.copy(
-                                                    battName = battName.text.trim(),
-                                                    designUah = uahVal,
-                                                    designUwh = uwhVal,
-                                                    modelName = modelName.text.trim(),
-                                                    overrideAny = overrideAny,
-                                                    verbose = verbose,
-                                                    koPath = koPath.text.trim()
-                                                )
-                                            }
-                                            val tasks = listOf(
-                                                Pair("batt_name", battName.text.trim()),
-                                                Pair("design_uah", uahVal.toString()),
-                                                Pair("design_uwh", uwhVal.toString()),
-                                                Pair("model_name", modelName.text.trim()),
-                                                Pair("override_any", if (overrideAny) "1" else "0"),
-                                                Pair("verbose", if (verbose) "1" else "0")
-                                            )
-                                            var okCnt = 0
-                                            for ((k, v) in tasks) if (v.isNotEmpty()) if (battMgr.writeParam(
-                                                    k,
-                                                    v
-                                                )
-                                            ) okCnt++
-                                            ConfigSync.syncBatt(
-                                                context,
-                                                battName.text.trim(),
-                                                uahVal,
-                                                uwhVal,
-                                                modelName.text.trim(),
-                                                overrideAny,
-                                                verbose
-                                            )
-                                            kernelMap = battMgr.readAll()
-                                            val msg = if (okCnt > 0) "SUCCESS:保存并应用完成 (成功 $okCnt 项)" else "WARN:保存完成，但应用失败"
-                                            opResult = msg
-                                            if (okCnt > 0) com.debug.battcaplsp.core.OpEvents.success(
-                                                "保存并应用成功 ($okCnt)"
-                                            ) else com.debug.battcaplsp.core.OpEvents.warn("保存写入内核失败")
-                                        } catch (t: Throwable) {
-                                            opResult = "ERROR:保存失败 ${t.message}"
-                                            com.debug.battcaplsp.core.OpEvents.error("保存失败: ${t.message}")
-                                        }
-                                    }
-                                },
-                                enabled = uiState.moduleLoaded && !isLoading
-                            )
                         }
                         Spacer(Modifier.height(AppDimensions.SpaceSmall))
-                        ButtonRow {
-                            ActionButton(
-                                text = "查看内核日志",
-                                icon = Icons.Default.Terminal,
-                                onClick = {
-                                    scope.launch {
-                                        try {
-                                            val cmd = "(dmesg | grep -E 'batt_design_override' || true)"
-                                            var res = RootShell.exec(cmd)
-                                            var lines = res.out.split('\n').filter { it.isNotBlank() }
-                                            if (lines.isEmpty()) {
-                                                val fb = RootShell.exec("logcat -b kernel -d | grep -E 'batt_design_override' || true")
-                                                if (fb.out.isNotBlank()) {
-                                                    res = fb
-                                                    lines = fb.out.split('\n').filter { it.isNotBlank() }
-                                                }
+                        ActionButton(
+                            text = "查看内核日志",
+                            icon = Icons.Default.Terminal,
+                            onClick = {
+                                scope.launch {
+                                    try {
+                                        val cmd = "(dmesg | grep -E 'batt_design_override' || true)"
+                                        var res = RootShell.exec(cmd)
+                                        var lines = res.out.split('\n').filter { it.isNotBlank() }
+                                        if (lines.isEmpty()) {
+                                            val fb = RootShell.exec("logcat -b kernel -d | grep -E 'batt_design_override' || true")
+                                            if (fb.out.isNotBlank()) {
+                                                res = fb
+                                                lines = fb.out.split('\n').filter { it.isNotBlank() }
                                             }
-                                            if (lines.isNotEmpty()) {
-                                                val tail = if (lines.size > 300) lines.takeLast(300) else lines
-                                                kernelLog = tail.joinToString("\n")
-                                                opResult = "SUCCESS:内核日志读取成功 (${tail.size} 行, 显示末尾)"
-                                                com.debug.battcaplsp.core.OpEvents.success("读取日志 ${tail.size} 行")
-                                            } else {
-                                                kernelLog = ""
-                                                opResult = if (res.err.isNotBlank()) {
-                                                    "WARN:未获取到匹配日志 (stderr: ${com.override.battcaplsp.core.TextAbbrev.middle(
-                                                        res.err,
-                                                        120
-                                                    )})".also {
-                                                        com.debug.battcaplsp.core.OpEvents.warn(
-                                                            "日志为空(含stderr)"
-                                                        )
-                                                    }
-                                                } else {
-                                                    "INFO:没有匹配到包含 batt_design_override 的日志".also {
-                                                        com.debug.battcaplsp.core.OpEvents.info("日志无匹配")
-                                                    }
-                                                }
-                                            }
-                                        } catch (t: Throwable) {
-                                            kernelLog = ""
-                                            opResult = "ERROR:日志读取异常 ${t.message}"
-                                            com.debug.battcaplsp.core.OpEvents.error("日志读取异常: ${t.message}")
                                         }
+                                        if (lines.isNotEmpty()) {
+                                            val tail = if (lines.size > 300) lines.takeLast(300) else lines
+                                            kernelLog = tail.joinToString("\n")
+                                            opResult = "SUCCESS:内核日志读取成功 (${tail.size} 行, 显示末尾)"
+                                            com.debug.battcaplsp.core.OpEvents.success("读取日志 ${tail.size} 行")
+                                        } else {
+                                            kernelLog = ""
+                                            opResult = if (res.err.isNotBlank()) {
+                                                "WARN:未获取到匹配日志 (stderr: ${com.override.battcaplsp.core.TextAbbrev.middle(
+                                                    res.err,
+                                                    120
+                                                )})".also {
+                                                    com.debug.battcaplsp.core.OpEvents.warn(
+                                                        "日志为空(含stderr)"
+                                                    )
+                                                }
+                                            } else {
+                                                "INFO:没有匹配到包含 batt_design_override 的日志".also {
+                                                    com.debug.battcaplsp.core.OpEvents.info("日志无匹配")
+                                                }
+                                            }
+                                        }
+                                    } catch (t: Throwable) {
+                                        kernelLog = ""
+                                        opResult = "ERROR:日志读取异常 ${t.message}"
+                                        com.debug.battcaplsp.core.OpEvents.error("日志读取异常: ${t.message}")
                                     }
-                                },
-                                secondary = true
-                            )
-                            ActionButton(
-                                text = "清空日志",
-                                icon = Icons.Default.Delete,
-                                onClick = { kernelLog = "" },
-                                secondary = true
-                            )
-                        }
+                                }
+                            },
+                            secondary = true
+                        )
                         if (kernelLog.isNotEmpty()) {
                             Spacer(Modifier.height(AppDimensions.SpaceSmall))
                             LogViewer(
                                 title = "电池模块日志 (batt_design_override)",
                                 logText = kernelLog,
-                                onClear = { kernelLog = "" },
                                 maxHeight = 320
                             )
                         }
@@ -651,61 +640,77 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun ModuleHeroCard(loaded: Boolean, isLoading: Boolean) {
         val gradient = if (loaded) {
-            Brush.linearGradient(
+            Brush.verticalGradient(
                 colors = listOf(
-                    ColorRoles.successContainer.copy(alpha = 0.7f),
+                    ColorRoles.successContainer.copy(alpha = 0.85f),
+                    ColorRoles.successContainer.copy(alpha = 0.35f),
                     MaterialTheme.colorScheme.surfaceContainerLow
                 )
             )
         } else {
-            Brush.linearGradient(
+            Brush.verticalGradient(
                 colors = listOf(
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f),
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
                     MaterialTheme.colorScheme.surfaceContainerLow
                 )
             )
         }
         AppCard(gradient = gradient) {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceMedium)
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 val icon = if (loaded) Icons.Default.BatteryChargingFull else Icons.Default.BatteryAlert
+                val iconContainerColor = if (loaded) ColorRoles.onSuccessContainer else MaterialTheme.colorScheme.primary
+                val iconContainerBg = if (loaded) ColorRoles.successContainer else MaterialTheme.colorScheme.primaryContainer
                 Box(
                     modifier = Modifier
-                        .size(64.dp)
+                        .size(80.dp)
                         .clip(MaterialTheme.shapes.extraLarge)
-                        .background(
-                            if (loaded) ColorRoles.successContainer else MaterialTheme.colorScheme.primaryContainer
-                        ),
+                        .background(iconContainerBg),
                     contentAlignment = Alignment.Center
                 ) {
                     if (isLoading) {
-                        CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 3.dp)
                     } else {
                         Icon(
                             imageVector = icon,
                             contentDescription = null,
-                            modifier = Modifier.size(32.dp),
-                            tint = if (loaded) ColorRoles.onSuccessContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                            modifier = Modifier.size(40.dp),
+                            tint = iconContainerColor
                         )
                     }
                 }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "电池模块",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = if (loaded) "已加载 · 参数生效中" else "未加载 · 请配置后加载模块",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Spacer(Modifier.height(AppDimensions.SpaceMedium))
+                Text(
+                    text = "电池模块",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (loaded) "已加载，参数正在生效" else "未加载，请配置参数后加载",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(AppDimensions.SpaceSmall))
+                StatusBadge(
+                    if (loaded) "SUCCESS:运行中" else "INFO:待加载",
+                    showLabel = if (loaded) "正常" else "未启动"
+                )
+                if (loaded) {
+                    Spacer(Modifier.height(AppDimensions.SpaceSmall))
+                    LinearProgressIndicator(
+                        progress = { 1f },
+                        modifier = Modifier
+                            .fillMaxWidth(0.6f)
+                            .height(6.dp)
+                            .clip(MaterialTheme.shapes.small),
+                        color = ColorRoles.onSuccessContainer,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                     )
                 }
-                StatusBadge(if (loaded) "SUCCESS:已加载" else "INFO:未加载")
             }
         }
     }

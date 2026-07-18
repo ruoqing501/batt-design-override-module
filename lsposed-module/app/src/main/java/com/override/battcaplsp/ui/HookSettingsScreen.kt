@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
@@ -339,6 +340,8 @@ fun HookSettingsScreen(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(AppDimensions.SpaceMedium)
     ) {
+        SettingsHeader()
+
         ModuleDownloadSection(
             kernelVersion = kernelVersion,
             kernelVersionDetail = kernelVersionDetail,
@@ -598,30 +601,77 @@ private fun ModuleDownloadSection(
             icon = Icons.Default.Extension,
             description = "内核模块、Magisk 环境与动态安装"
         )
+        Spacer(Modifier.height(AppDimensions.SpaceMedium))
+
+        // 状态网格
+        Row(modifier = Modifier.fillMaxWidth()) {
+            StatusTile(
+                modifier = Modifier.weight(1f),
+                label = "内核版本",
+                value = kernelVersionDetail.ifBlank { kernelVersion.ifEmpty { "获取中" } },
+                icon = Icons.Default.Memory,
+                isActive = kernelVersion.isNotEmpty()
+            )
+            Spacer(Modifier.width(AppDimensions.SpaceSmall))
+            StatusTile(
+                modifier = Modifier.weight(1f),
+                label = "Root 权限",
+                value = when (rootStatus?.available) {
+                    true -> "已授权"
+                    false -> "未授权"
+                    else -> "检测中"
+                },
+                icon = Icons.Default.Security,
+                isActive = rootStatus?.available == true,
+                onClick = onRefreshRoot
+            )
+        }
         Spacer(Modifier.height(AppDimensions.SpaceSmall))
-        StatusRow(label = "内核版本", value = kernelVersionDetail.ifBlank { kernelVersion.ifEmpty { "获取中..." } })
-        if (battModuleAvailable == true || battModuleLoaded == true) {
-            ModuleStatusRow(
+        Row(modifier = Modifier.fillMaxWidth()) {
+            StatusTile(
+                modifier = Modifier.weight(1f),
                 label = "电池模块",
-                vermagic = battModuleVermagic,
-                loaded = battModuleLoaded == true,
-                available = battModuleAvailable == true
+                value = moduleStatusText(
+                    loaded = battModuleLoaded == true,
+                    available = battModuleAvailable == true,
+                    vermagic = battModuleVermagic
+                ),
+                icon = Icons.Default.BatteryFull,
+                isActive = battModuleLoaded == true
             )
-        }
-        if (chgModuleAvailable == true || chgModuleLoaded == true) {
-            ModuleStatusRow(
+            Spacer(Modifier.width(AppDimensions.SpaceSmall))
+            StatusTile(
+                modifier = Modifier.weight(1f),
                 label = "充电模块",
-                vermagic = chgModuleVermagic,
-                loaded = chgModuleLoaded == true,
-                available = chgModuleAvailable == true
+                value = moduleStatusText(
+                    loaded = chgModuleLoaded == true,
+                    available = chgModuleAvailable == true,
+                    vermagic = chgModuleVermagic
+                ),
+                icon = Icons.Default.ElectricBolt,
+                isActive = chgModuleLoaded == true
             )
         }
-        StatusIconRow(label = "Root 权限", available = rootStatus?.available) { onRefreshRoot() }
+        Spacer(Modifier.height(AppDimensions.SpaceSmall))
+        Row(modifier = Modifier.fillMaxWidth()) {
+            StatusTile(
+                modifier = Modifier.weight(1f),
+                label = "Magisk",
+                value = if (magiskAvailable == true) "已安装" else if (magiskAvailable == false) "未安装" else "检测中",
+                icon = Icons.Default.Extension,
+                isActive = magiskAvailable == true
+            )
+            Spacer(Modifier.width(AppDimensions.SpaceSmall))
+            StatusTile(
+                modifier = Modifier.weight(1f),
+                label = "动态模块",
+                value = if (magiskModuleInstalled == true) "已安装" else if (magiskModuleInstalled == false) "未安装" else "检测中",
+                icon = Icons.Default.ViewModule,
+                isActive = magiskModuleInstalled == true
+            )
+        }
+
         SectionDivider()
-        Text("环境与动态模块", style = MaterialTheme.typography.titleSmall)
-        Spacer(Modifier.height(4.dp))
-        StatusIconRow(label = "Magisk 环境", available = magiskAvailable)
-        StatusIconRow(label = "动态模块", available = magiskModuleInstalled)
         PreferenceItem(
             title = "可用内核模块",
             description = "下载与当前内核匹配的 .ko 模块",
@@ -629,7 +679,7 @@ private fun ModuleDownloadSection(
             value = "${availableModules.size} 个",
             onClick = onShowModuleDownloadDialog
         )
-        Spacer(Modifier.height(AppDimensions.SpaceSmall))
+        Spacer(Modifier.height(AppDimensions.SpaceMedium))
         ButtonRow {
             ActionButton(
                 text = if (isInstallingModule) "处理中..." else "安装动态模块",
@@ -677,6 +727,62 @@ private fun ModuleDownloadSection(
                     color = MaterialTheme.colorScheme.error.copy(alpha = 0.90f)
                 )
             }
+        }
+    }
+}
+
+private fun moduleStatusText(loaded: Boolean, available: Boolean, vermagic: String): String {
+    if (loaded) {
+        val kv = extractKernelVersionFromVermagic(vermagic)
+        return if (kv.isNotEmpty()) "运行中 · $kv" else "运行中"
+    }
+    if (available) return "可用未加载"
+    return "未检测到"
+}
+
+@Composable
+private fun StatusTile(
+    label: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isActive: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
+    val containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer
+    else MaterialTheme.colorScheme.surfaceContainerHighest
+    val contentColor = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer
+    else MaterialTheme.colorScheme.onSurfaceVariant
+    Card(
+        modifier = modifier
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                color = contentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall,
+                color = contentColor.copy(alpha = 0.7f)
+            )
         }
     }
 }
@@ -936,6 +1042,45 @@ private fun ModuleDownloadDialog(
 }
 
 @Composable
+private fun SettingsHeader() {
+    AppCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceMedium)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(MaterialTheme.shapes.extraLarge)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = null,
+                    modifier = Modifier.size(32.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "设置",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "模块管理、Hook 选项与关于",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun AboutSection() {
     val context = LocalContext.current
     AppCard {
@@ -944,43 +1089,53 @@ private fun AboutSection() {
             icon = Icons.Default.Info,
             description = "应用信息、开源链接与致谢"
         )
-        Spacer(Modifier.height(AppDimensions.SpaceSmall))
+        Spacer(Modifier.height(AppDimensions.SpaceMedium))
         Row(
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceSmall)
+            horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceMedium)
         ) {
             Box(
                 modifier = Modifier
-                    .size(56.dp)
+                    .size(72.dp)
                     .clip(MaterialTheme.shapes.extraLarge)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primaryContainer,
+                                MaterialTheme.colorScheme.secondaryContainer
+                            )
+                        )
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.BatteryChargingFull,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(32.dp)
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(36.dp)
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Battery Override Manager",
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "版本: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "版本 ${BuildConfig.VERSION_NAME} · ${BuildConfig.VERSION_CODE}",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "作者: 开源社区",
+                    text = "作者：开源社区",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
-        Spacer(Modifier.height(AppDimensions.SpaceSmall))
+        Spacer(Modifier.height(AppDimensions.SpaceMedium))
         PreferenceItem(
             title = "GitHub 仓库",
             description = "查看源码、提交 Issue 与参与贡献",
