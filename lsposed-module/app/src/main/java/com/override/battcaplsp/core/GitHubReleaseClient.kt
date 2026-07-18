@@ -103,21 +103,22 @@ class GitHubReleaseClient {
      * 获取最新的Release信息
      */
     private suspend fun getLatestRelease(): ReleaseInfo? = withContext(Dispatchers.IO) {
+        var connection: HttpURLConnection? = null
         try {
             val url = URL("$GITHUB_API_BASE/repos/$REPO_OWNER/$REPO_NAME/releases")
-            val connection = url.openConnection() as HttpURLConnection
-            
+            connection = url.openConnection() as HttpURLConnection
+
             connection.requestMethod = "GET"
             connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
             connection.setRequestProperty("User-Agent", "BatteryOverrideManager/1.0")
-            
+
             val responseCode = connection.responseCode
             if (responseCode != HttpURLConnection.HTTP_OK) {
                 android.util.Log.e("GitHubReleaseClient", "API请求失败: $responseCode")
                 return@withContext null
             }
-            
-            val response = connection.inputStream.bufferedReader().readText()
+
+            val response = connection.inputStream.bufferedReader().use { it.readText() }
             val releases = org.json.JSONArray(response)
             
             // 查找最新的APK release
@@ -157,6 +158,8 @@ class GitHubReleaseClient {
         } catch (e: Exception) {
             android.util.Log.e("GitHubReleaseClient", "获取Release信息失败", e)
             null
+        } finally {
+            connection?.disconnect()
         }
     }
     
@@ -214,14 +217,15 @@ class GitHubReleaseClient {
     suspend fun listLatestKoAssets(limit: Int = 15): List<KoAsset> = withContext(Dispatchers.IO) {
         val result = mutableListOf<KoAsset>()
         val seen = HashSet<String>()
+        var conn: HttpURLConnection? = null
         try {
             val url = URL("$GITHUB_API_BASE/repos/$REPO_OWNER/$REPO_NAME/releases")
-            val conn = url.openConnection() as HttpURLConnection
+            conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
             conn.setRequestProperty("Accept", "application/vnd.github.v3+json")
             conn.setRequestProperty("User-Agent", "BatteryOverrideManager/1.0")
             if (conn.responseCode != HttpURLConnection.HTTP_OK) return@withContext emptyList()
-            val text = conn.inputStream.bufferedReader().readText()
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
             val arr = org.json.JSONArray(text)
             for (i in 0 until arr.length()) {
                 if (result.size >= limit) break
@@ -241,6 +245,8 @@ class GitHubReleaseClient {
             }
         } catch (e: Exception) {
             android.util.Log.e("GitHubReleaseClient", "listLatestKoAssets failed", e)
+        } finally {
+            conn?.disconnect()
         }
         result
     }

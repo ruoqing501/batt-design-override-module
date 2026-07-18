@@ -72,13 +72,14 @@ class MagiskModuleManager(private val context: Context) {
             // 更严格的检测：不仅检查目录存在，还要检查关键文件
             for (id in ids) {
                 val modulePath = "$MAGISK_MODULES_PATH/$id"
+                val modulePathArg = RootShell.shellArg(modulePath)
                 val checkCmd = """
-                    if [ -d "$modulePath" ] && [ -f "$modulePath/module.prop" ]; then
+                    if [ -d $modulePathArg ] && [ -f $modulePathArg/module.prop ]; then
                         echo "found:$id"
                         exit 0
                     fi
                 """.trimIndent()
-                
+
                 val res = RootShell.exec("sh -c '$checkCmd' 2>/dev/null || true")
                 android.util.Log.d("MagiskModuleManager", "Checking $id: code=${res.code}, out='${res.out.trim()}'")
                 
@@ -128,12 +129,14 @@ class MagiskModuleManager(private val context: Context) {
             }
 
             // 清理旧模块目录并解压
-            val cleanResult = RootShell.exec("rm -rf '$modulePath'")
+            val modulePathArg = RootShell.shellArg(modulePath)
+            val cleanResult = RootShell.exec("rm -rf $modulePathArg")
             if (cleanResult.code != 0) {
                 android.util.Log.w("MagiskModuleManager", "Failed to clean old module: ${cleanResult.err}")
             }
 
-            val extractResult = RootShell.exec("mkdir -p '$modulePath' && unzip -o '${tmpZip.absolutePath}' -d '$modulePath'")
+            val tmpZipArg = RootShell.shellArg(tmpZip.absolutePath)
+            val extractResult = RootShell.exec("mkdir -p $modulePathArg && unzip -o $tmpZipArg -d $modulePathArg")
             if (extractResult.code != 0) {
                 android.util.Log.e("MagiskModuleManager", "Failed to extract module: ${extractResult.err}")
                 return@withContext ModuleInstallResult(
@@ -143,7 +146,7 @@ class MagiskModuleManager(private val context: Context) {
             }
 
             // 设置正确的权限
-            RootShell.exec("chmod -R 755 '$modulePath' && chmod 644 '$modulePath'/module.prop")
+            RootShell.exec("chmod -R 755 $modulePathArg && chmod 644 $modulePathArg/module.prop")
 
             // 清理临时文件
             tmpZip.delete()
@@ -181,7 +184,8 @@ class MagiskModuleManager(private val context: Context) {
             
         """.trimIndent()
         
-        val result = RootShell.exec("cat > '$modulePath/module.prop' << 'EOF'\n$content\nEOF")
+        val modulePathArg = RootShell.shellArg(modulePath)
+        val result = RootShell.exec("cat > $modulePathArg/module.prop << 'EOF'\n$content\nEOF")
         return result.code == 0
     }
     
@@ -413,10 +417,11 @@ class MagiskModuleManager(private val context: Context) {
             
         """.trimIndent()
         
-        val result = RootShell.exec("cat > '$modulePath/service.sh' << 'EOF'\n$content\nEOF")
+        val modulePathArg = RootShell.shellArg(modulePath)
+        val result = RootShell.exec("cat > $modulePathArg/service.sh << 'EOF'\n$content\nEOF")
         if (result.code == 0) {
             // 设置执行权限
-            val chmodResult = RootShell.exec("chmod 755 '$modulePath/service.sh'")
+            val chmodResult = RootShell.exec("chmod 755 $modulePathArg/service.sh")
             return chmodResult.code == 0
         }
         return false
@@ -449,7 +454,7 @@ class MagiskModuleManager(private val context: Context) {
             
         """.trimIndent()
         
-        val result = RootShell.exec("cat > '$commonPath/params.conf' << 'EOF'\n$content\nEOF")
+        val result = RootShell.exec("cat > ${RootShell.shellArg(commonPath)}/params.conf << 'EOF'\n$content\nEOF")
         return result.code == 0
     }
     
@@ -460,9 +465,11 @@ class MagiskModuleManager(private val context: Context) {
             
             val modulePath = getModulePath()
             val commonPath = "$modulePath/common"
-            
+            val modulePathArg = RootShell.shellArg(modulePath)
+            val commonPathArg = RootShell.shellArg(commonPath)
+
             // 使用 root shell 检查目录是否存在；若不存在尝试自动创建轻量模块
-            var checkDirResult = RootShell.exec("[ -d '$modulePath' ] && [ -d '$commonPath' ]")
+            var checkDirResult = RootShell.exec("[ -d $modulePathArg ] && [ -d $commonPathArg ]")
             if (checkDirResult.code != 0) {
                 android.util.Log.w("MagiskModuleManager", "Module directory missing, attempting auto create: $modulePath")
                 // 尝试自动创建（忽略返回值，仅用于兜底）
@@ -470,7 +477,7 @@ class MagiskModuleManager(private val context: Context) {
                     android.util.Log.w("MagiskModuleManager", "Auto create lightweight module failed: ${it.message}")
                 }
                 // 重新检测
-                checkDirResult = RootShell.exec("[ -d '$modulePath' ] && [ -d '$commonPath' ]")
+                checkDirResult = RootShell.exec("[ -d $modulePathArg ] && [ -d $commonPathArg ]")
                 if (checkDirResult.code != 0) {
                     android.util.Log.e("MagiskModuleManager", "Module directories still absent after auto-create: $modulePath")
                     return@withContext false
@@ -493,39 +500,42 @@ class MagiskModuleManager(private val context: Context) {
             val fileNames = generateKernelModuleFileNames(moduleName, version, originalFileName)
             android.util.Log.d("MagiskModuleManager", "Generated file names: $fileNames")
             
+            val sourcePathArg = RootShell.shellArg(sourceFile.absolutePath)
             var success = false
             for (fileName in fileNames) {
                 val targetPath = "$commonPath/$fileName"
+                val targetPathArg = RootShell.shellArg(targetPath)
+                val fileNameArg = RootShell.shellArg(fileName)
                 try {
                     android.util.Log.d("MagiskModuleManager", "Trying to install as: $fileName")
-                    
+
                     // 使用 root shell 删除已存在的文件
-                    val removeResult = RootShell.exec("rm -f '$targetPath'")
+                    val removeResult = RootShell.exec("rm -f $targetPathArg")
                     if (removeResult.code == 0) {
                         android.util.Log.d("MagiskModuleManager", "Removed existing file: $targetPath")
                     }
-                    
+
                     // 使用 root shell 复制文件
-                    val copyResult = RootShell.exec("cp '${sourceFile.absolutePath}' '$targetPath'")
+                    val copyResult = RootShell.exec("cp $sourcePathArg $targetPathArg")
                     if (copyResult.code != 0) {
                         android.util.Log.e("MagiskModuleManager", "Failed to copy file: ${copyResult.err}")
                         continue
                     }
-                    
+
                     android.util.Log.d("MagiskModuleManager", "File copied successfully to: $targetPath")
-                    
+
                     // 设置权限
-                    val chmodResult = RootShell.exec("chmod 644 '$targetPath'")
+                    val chmodResult = RootShell.exec("chmod 644 $targetPathArg")
                     android.util.Log.d("MagiskModuleManager", "Chmod result: code=${chmodResult.code}, out=${chmodResult.out}")
-                    
+
                     if (chmodResult.code == 0) {
                         // 验证文件是否成功安装
-                        val verifyResult = RootShell.exec("[ -f '$targetPath' ] && ls -la '$targetPath'")
+                        val verifyResult = RootShell.exec("[ -f $targetPathArg ] && ls -la $targetPathArg")
                         if (verifyResult.code == 0) {
                             android.util.Log.d("MagiskModuleManager", "Successfully installed: $fileName")
                             android.util.Log.d("MagiskModuleManager", "File info: ${verifyResult.out}")
                             // 记录一个标记文件供前端诊断（非必须）
-                            RootShell.exec("echo 'installed:$fileName' > '$commonPath/.last_install' 2>/dev/null || true")
+                            RootShell.exec("echo 'installed:'$fileNameArg > $commonPathArg/.last_install 2>/dev/null || true")
                             success = true
                             break
                         } else {
@@ -565,10 +575,12 @@ class MagiskModuleManager(private val context: Context) {
         try {
             val modulePath = getModulePath()
             val commonPath = "$modulePath/common"
-            var checkDirResult = RootShell.exec("[ -d '$modulePath' ] && [ -d '$commonPath' ]")
+            val modulePathArg = RootShell.shellArg(modulePath)
+            val commonPathArg = RootShell.shellArg(commonPath)
+            var checkDirResult = RootShell.exec("[ -d $modulePathArg ] && [ -d $commonPathArg ]")
             if (checkDirResult.code != 0) {
                 runCatching { createLightweightModule() }.onFailure { errors.add("autoCreateFailed:${it.message}") }
-                checkDirResult = RootShell.exec("[ -d '$modulePath' ] && [ -d '$commonPath' ]")
+                checkDirResult = RootShell.exec("[ -d $modulePathArg ] && [ -d $commonPathArg ]")
                 if (checkDirResult.code != 0) {
                     errors.add("noModuleDir:$modulePath")
                     return@withContext DetailedInstallResult(false, null, tried, errors)
@@ -580,31 +592,34 @@ class MagiskModuleManager(private val context: Context) {
                 errors.add("sourceMissing:$koFilePath")
                 return@withContext DetailedInstallResult(false, null, tried, errors)
             }
+            val sourcePathArg = RootShell.shellArg(sourceFile.absolutePath)
             val fileNames = generateKernelModuleFileNames(moduleName, version, sourceFile.name)
             for (fn in fileNames) {
                 tried.add(fn)
                 val targetPath = "$commonPath/$fn"
-                val rm = RootShell.exec("rm -f '$targetPath'")
+                val targetPathArg = RootShell.shellArg(targetPath)
+                val fnArg = RootShell.shellArg(fn)
+                val rm = RootShell.exec("rm -f $targetPathArg")
                 if (rm.code != 0) {
                     errors.add("rmFail:$fn:${rm.err}")
                     continue
                 }
-                val cp = RootShell.exec("cp '${sourceFile.absolutePath}' '$targetPath'")
+                val cp = RootShell.exec("cp $sourcePathArg $targetPathArg")
                 if (cp.code != 0) {
                     errors.add("cpFail:$fn:${cp.err}")
                     continue
                 }
-                val chmod = RootShell.exec("chmod 644 '$targetPath'")
+                val chmod = RootShell.exec("chmod 644 $targetPathArg")
                 if (chmod.code != 0) {
                     errors.add("chmodFail:$fn:${chmod.err}")
                     continue
                 }
-                val verify = RootShell.exec("[ -f '$targetPath' ] && ls -l '$targetPath'")
+                val verify = RootShell.exec("[ -f $targetPathArg ] && ls -l $targetPathArg")
                 if (verify.code != 0) {
                     errors.add("verifyFail:$fn:${verify.err}")
                     continue
                 }
-                RootShell.exec("echo 'installed:$fn' > '$commonPath/.last_install' 2>/dev/null || true")
+                RootShell.exec("echo 'installed:'$fnArg > $commonPathArg/.last_install 2>/dev/null || true")
                 installed = fn
                 break
             }
@@ -616,7 +631,7 @@ class MagiskModuleManager(private val context: Context) {
                 // 尝试卸载旧模块（如果已加载），确保热更新生效
                 // 内核模块名通常会将 - 转换为 _
                 val kernelModuleName = moduleName.replace('-', '_')
-                val rmmodResult = RootShell.exec("rmmod $kernelModuleName")
+                val rmmodResult = RootShell.exec("rmmod ${RootShell.shellArg(kernelModuleName)}")
                 if (rmmodResult.code == 0) {
                     android.util.Log.d("MagiskModuleManager", "Successfully unloaded old module: $kernelModuleName")
                 } else {
@@ -625,8 +640,10 @@ class MagiskModuleManager(private val context: Context) {
 
                 // 仅尝试用户指定的新复制文件 (不做多轮搜索) 避免与 service.sh 交叉叠加风险
                 // 增强：读取 params.conf 并应用参数，模拟 service.sh 的行为
+                val autoLoadModulePathArg = RootShell.shellArg(modulePath)
+                val autoLoadInstalledArg = RootShell.shellArg(installed)
                 val insmodCmd = buildString {
-                    append("CONF='$modulePath/common/params.conf'; ")
+                    append("CONF=${autoLoadModulePathArg}/common/params.conf; ")
                     append("[ -f \"\$CONF\" ] && . \"\$CONF\"; ")
                     append("ARGS=''; ")
                     append("[ -n \"\$MODEL_NAME\" ] && ARGS=\"\$ARGS model_name=\$MODEL_NAME\"; ")
@@ -635,12 +652,12 @@ class MagiskModuleManager(private val context: Context) {
                     append("[ -n \"\$BATT_NAME\" ] && ARGS=\"\$ARGS batt_name=\$BATT_NAME\"; ")
                     append("[ -n \"\$OVERRIDE_ANY\" ] && ARGS=\"\$ARGS override_any=\$OVERRIDE_ANY\"; ")
                     append("[ -n \"\$VERBOSE\" ] && ARGS=\"\$ARGS verbose=\$VERBOSE\"; ")
-                    
+
                     if (loadParams.isNotBlank()) {
                         append("ARGS=\"\$ARGS $loadParams\"; ")
                     }
-                    
-                    append("insmod '$modulePath/common/$installed' \$ARGS")
+
+                    append("insmod ${autoLoadModulePathArg}/common/${autoLoadInstalledArg} \$ARGS")
                 }
                 val result = RootShell.exec(insmodCmd)
                 autoLoaded = result.code == 0
@@ -711,7 +728,7 @@ class MagiskModuleManager(private val context: Context) {
     suspend fun uninstallModule(): ModuleInstallResult = withContext(Dispatchers.IO) {
         try {
             val modulePath = getModulePath()
-            val result = RootShell.exec("rm -rf $modulePath")
+            val result = RootShell.exec("rm -rf ${RootShell.shellArg(modulePath)}")
             
             if (result.code == 0) {
                 ModuleInstallResult(
@@ -739,7 +756,7 @@ class MagiskModuleManager(private val context: Context) {
             val serviceScript = File(modulePath, "service.sh")
             
             if (serviceScript.exists()) {
-                val result = RootShell.exec("sh ${serviceScript.absolutePath}")
+                val result = RootShell.exec("sh ${RootShell.shellArg(serviceScript.absolutePath)}")
                 return@withContext result.code == 0
             }
             

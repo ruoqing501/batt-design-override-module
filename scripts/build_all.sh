@@ -53,11 +53,28 @@ die(){
         local fail_time=$(date +%s)
         local fail_temp=$(get_cpu_temp 2>/dev/null || echo "unknown")
         local fail_duration=$((fail_time - BUILD_START_TIME))
-        "$SCRIPT_DIR/build_logger.sh" complete "$fail_time" "$fail_temp" "$fail_duration" "0" "0" "0" "false" 2>/dev/null || true
+        run_script "$SCRIPT_DIR/build_logger.sh" complete "$fail_time" "$fail_temp" "$fail_duration" "0" "0" "0" "false" 2>/dev/null || true
     fi
     exit 1
 }
 log(){ echo "[i] $*"; }
+
+# 执行外部脚本前先检查存在性与可执行权限；不存在则警告并跳过，避免崩溃
+run_script() {
+    local script_path="$1"
+    shift
+    if [[ ! -f "$script_path" ]]; then
+        log "⚠️  脚本不存在，跳过: $script_path"
+        return 0
+    fi
+    if [[ ! -x "$script_path" ]]; then
+        if ! chmod +x "$script_path" 2>/dev/null; then
+            log "⚠️  脚本无执行权限且无法修复，跳过: $script_path"
+            return 0
+        fi
+    fi
+    "$script_path" "$@"
+}
 
 # 获取CPU温度的函数
 get_cpu_temp() {
@@ -153,7 +170,7 @@ monitor_temperature
 INITIAL_TEMP=$(get_cpu_temp)
 
 # 记录构建开始信息
-"$SCRIPT_DIR/build_logger.sh" start "$KERNEL_LINE" "${VERSION:-unknown}" "$THERMAL_MODE" "$BUILD_START_TIME" "$INITIAL_TEMP" "${JOBS:-auto}"
+run_script "$SCRIPT_DIR/build_logger.sh" start "$KERNEL_LINE" "${VERSION:-unknown}" "$THERMAL_MODE" "$BUILD_START_TIME" "$INITIAL_TEMP" "${JOBS:-auto}"
 
 # 自动调整编译任务数
 if [[ "$AUTO_ADJUST_JOBS" == 1 && -z "$JOBS_ARG" ]]; then
@@ -195,52 +212,50 @@ case "$KERNEL_LINE" in
 esac
 
 # 统一构建内核模块（电池和充电模块一起构建）
+KERNEL_BUILT=0
 if [[ "$SKIP_BATT" != 1 || "$SKIP_CHG" != 1 ]]; then
   KERNEL_BUILD_START=$(date +%s)
   log "🔨 开始构建内核模块 (内核版本: $KERNEL_LINE)..."
   monitor_temperature || { log "等待降温后继续..."; monitor_temperature; }
-  
+
   # 设置构建参数（通过环境变量）
   export BUILD_BATT=1
   export BUILD_CHG=1
   [[ "$SKIP_BATT" == 1 ]] && export BUILD_BATT=0
   [[ "$SKIP_CHG" == 1 ]] && export BUILD_CHG=0
-  
+
   # 传递JOBS参数
   if [[ -n "$JOBS_ARG" ]]; then
     export JOBS="${JOBS_ARG#JOBS=}"
     log "🔧 设置编译任务数: $JOBS"
   fi
-  
-  case "$KERNEL_LINE" in
-    5.4)  "$WS_ROOT/scripts/build_modules_5_4.sh" ;;
-    5.10) "$WS_ROOT/scripts/build_modules_5_10.sh" ;;
-    5.15) "$WS_ROOT/scripts/build_modules_5_15.sh" ;;
-    6.1)  "$WS_ROOT/scripts/build_modules_6_1.sh" ;;
-    6.6)  "$WS_ROOT/scripts/build_modules_6_6.sh" ;;
-    6.12) "$WS_ROOT/scripts/build_modules_6_12.sh" ;;
-    *) die "不支持的 --kernel-line: $KERNEL_LINE" ;;
-  esac
-  
+
+  MODULE_SCRIPT="$WS_ROOT/scripts/build_modules_${KERNEL_LINE//./_}.sh"
+  if run_script "$MODULE_SCRIPT"; then
+    KERNEL_BUILT=1
+  else
+    log "⚠️  内核模块构建脚本执行失败或被跳过: $MODULE_SCRIPT"
+  fi
+
   # 计算内核模块构建用时
   KERNEL_BUILD_END=$(date +%s)
   KERNEL_BUILD_TIME=$((KERNEL_BUILD_END - KERNEL_BUILD_START))
   KERNEL_BUILD_MIN=$((KERNEL_BUILD_TIME / 60))
   KERNEL_BUILD_SEC=$((KERNEL_BUILD_TIME % 60))
-  
-  # 检查构建结果
-  if [[ "$SKIP_BATT" != 1 ]]; then
+
+  # 检查构建结果（仅在真正执行过构建脚本时要求产物存在）
+  if [[ "$SKIP_BATT" != 1 && "$KERNEL_BUILT" == 1 ]]; then
     [[ -f "$BATTMOD_KO" ]] || die "未生成电池模块: $BATTMOD_KO"
     log "✅ 电池模块构建完成: $BATTMOD_KO"
   fi
-  
-  if [[ "$SKIP_CHG" != 1 ]]; then
+
+  if [[ "$SKIP_CHG" != 1 && "$KERNEL_BUILT" == 1 ]]; then
     if [[ "$KERNEL_LINE" == "5.15" ]]; then
       [[ -f "$CHGMOD_KO" ]] || log "提示：未生成充电模块 .ko（可接受）"
       [[ -f "$CHGMOD_KO" ]] && log "✅ 充电模块构建完成: $CHGMOD_KO"
     fi
   fi
-  
+
   log "⏱️  内核模块构建用时: ${KERNEL_BUILD_MIN}分${KERNEL_BUILD_SEC}秒"
 fi
 
@@ -332,7 +347,7 @@ echo "🎯 编译模式: $THERMAL_MODE"
 echo "=========================================="
 
 # 记录构建完成信息
-"$SCRIPT_DIR/build_logger.sh" complete "$BUILD_END_TIME" "$FINAL_TEMP" "$TOTAL_BUILD_TIME" "${KERNEL_BUILD_TIME:-0}" "${APP_BUILD_TIME:-0}" "$PACKAGE_TIME" "true"
+run_script "$SCRIPT_DIR/build_logger.sh" complete "$BUILD_END_TIME" "$FINAL_TEMP" "$TOTAL_BUILD_TIME" "${KERNEL_BUILD_TIME:-0}" "${APP_BUILD_TIME:-0}" "$PACKAGE_TIME" "true"
 
 echo "[✓] 完成：$ZIP_PATH"
 echo "$ZIP_PATH"

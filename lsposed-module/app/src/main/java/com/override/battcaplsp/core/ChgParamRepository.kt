@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.runBlocking
 
 private val Context.chgStore by preferencesDataStore(name = "chg_override")
 
@@ -49,7 +48,7 @@ data class ChgUiState(
 
 class ChgParamRepository(private val ctx: Context, private val mgr: ChgModuleManager) {
     private val prefsFlow: Flow<ChgUiState> = ctx.chgStore.data.map {
-        runBlocking { toStateAsync(it) }
+        toStateAsync(it)
     }
     private val _loaded = MutableStateFlow(false)
     val loaded: StateFlow<Boolean> get() = _loaded
@@ -104,7 +103,7 @@ class ChgParamRepository(private val ctx: Context, private val mgr: ChgModuleMan
             p[ChgKeys.verbose] = if (n.verbose) 1 else 0
             p[ChgKeys.pdDesired] = n.pdDesired
         }
-        runBlocking { refresh() }
+        refresh()
     }
 }
 

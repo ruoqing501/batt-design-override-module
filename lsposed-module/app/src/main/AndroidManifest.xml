@@ -50,7 +50,7 @@
         <provider
             android:name="com.override.battcaplsp.SettingsProvider"
             android:authorities="com.override.battcaplsp.provider"
-            android:exported="true"
+            android:exported="false"
             android:grantUriPermissions="true" />
         <!-- FileProvider 用于暴露下载的 APK (content://) 避免 FileUriExposedException -->
         <provider

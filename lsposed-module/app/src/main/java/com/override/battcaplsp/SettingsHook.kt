@@ -1,6 +1,7 @@
 package com.override.battcaplsp
 
 import android.util.Log
+import com.override.battcaplsp.core.DeviceUtils
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
@@ -86,16 +87,7 @@ class SettingsHook : IXposedHookLoadPackage {
         }
     }
 
-    private fun isMiui(): Boolean {
-        return try {
-            val clz = Class.forName("android.os.SystemProperties")
-            val get = clz.getMethod("get", String::class.java, String::class.java)
-            val v = get.invoke(null, "ro.miui.ui.version.name", "")?.toString() ?: ""
-            v.isNotEmpty() || android.os.Build.MANUFACTURER.contains("Xiaomi", true)
-        } catch (_: Throwable) {
-            android.os.Build.MANUFACTURER.contains("Xiaomi", true)
-        }
-    }
+    private fun isMiui(): Boolean = DeviceUtils.isMiuiDevice()
 
     private fun hookJsonRewriters(lpparam: XC_LoadPackage.LoadPackageParam, className: String) {
         val clz = XposedHelpers.findClassIfExists(className, lpparam.classLoader) ?: return

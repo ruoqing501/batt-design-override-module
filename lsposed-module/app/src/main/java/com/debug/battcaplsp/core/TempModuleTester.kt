@@ -20,25 +20,33 @@ class TempModuleTester(private val context: Context) {
     data class LoadResult(val success: Boolean, val error: String?, val dmesg: String)
     data class UnloadResult(val success: Boolean, val error: String?)
 
+    /** 净化从 URL 提取的本地文件名，仅保留白名单字符，防止路径遍历 */
+    private fun sanitizeFileName(name: String): String {
+        val cleaned = name.replace(Regex("[^A-Za-z0-9._-]"), "_").removePrefix(".")
+        return if (cleaned.isBlank() || cleaned == "_") "module.ko" else cleaned.take(255)
+    }
+
     /** 下载远程 .ko 文件到内部存储 (限制大小 5MB) */
     suspend fun download(url: String, fileName: String? = null, maxSize: Long = 5 * 1024 * 1024): DownloadResult = withContext(Dispatchers.IO) {
         val clean = url.trim()
         if (!clean.startsWith("http")) return@withContext DownloadResult(false, null, 0, "URL必须以http开头")
+        var conn: HttpURLConnection? = null
         try {
-            val conn = URL(clean).openConnection() as HttpURLConnection
+            conn = URL(clean).openConnection() as HttpURLConnection
             conn.connectTimeout = 10000
             conn.readTimeout = 15000
             conn.instanceFollowRedirects = true
             conn.connect()
             val len = conn.contentLengthLong
             if (len > 0 && len > maxSize) {
-                conn.disconnect(); return@withContext DownloadResult(false, null, len, "文件过大(${len}B) > ${maxSize}B")
+                return@withContext DownloadResult(false, null, len, "文件过大(${len}B) > ${maxSize}B")
             }
             val guessName = fileName ?: clean.substringAfterLast('/')
-            if (!guessName.endsWith(".ko")) {
-                conn.disconnect(); return@withContext DownloadResult(false, null, 0, "文件必须为 .ko")
+            val safeName = sanitizeFileName(guessName)
+            if (!safeName.endsWith(".ko")) {
+                return@withContext DownloadResult(false, null, 0, "文件必须为 .ko")
             }
-            val outFile = File(workDir, guessName)
+            val outFile = File(workDir, safeName)
             conn.inputStream.use { input ->
                 outFile.outputStream().use { output ->
                     val buf = ByteArray(16 * 1024)
@@ -48,17 +56,18 @@ class TempModuleTester(private val context: Context) {
                         if (r <= 0) break
                         total += r
                         if (total > maxSize) {
-                            output.flush(); conn.disconnect(); outFile.delete()
+                            output.flush(); outFile.delete()
                             return@withContext DownloadResult(false, null, total, "下载过程中大小超过限制 ${maxSize}B")
                         }
                         output.write(buf, 0, r)
                     }
                 }
             }
-            conn.disconnect()
             DownloadResult(true, outFile.absolutePath, outFile.length(), null)
         } catch (t: Throwable) {
             DownloadResult(false, null, 0, t.message ?: "下载异常")
+        } finally {
+            conn?.disconnect()
         }
     }
 
@@ -68,9 +77,9 @@ class TempModuleTester(private val context: Context) {
         // 记录加载前后特征日志时间戳(使用 dmesg -T 不一定所有内核支持；采用序号)
         val before = RootShell.exec("dmesg | wc -l").out.trim().toIntOrNull() ?: -1
         val args = buildString {
-            params.forEach { (k,v) -> if (!v.isNullOrBlank()) append(" ").append(k).append("=").append(quoteIfNeeded(v)) }
+            params.forEach { (k,v) -> if (!v.isNullOrBlank()) append(" ").append(k).append("=").append(RootShell.shellArg(v)) }
         }
-        val res = RootShell.exec("insmod ${quoteIfNeeded(path)}$args")
+        val res = RootShell.exec("insmod ${RootShell.shellArg(path)}$args")
         val after = RootShell.exec("dmesg | wc -l").out.trim().toIntOrNull() ?: -1
         val delta = if (before >=0 && after >= before) after - before else dmesgLines
         val tailCmd = if (delta in 1..dmesgLines) "dmesg | tail -n $delta" else "dmesg | tail -n $dmesgLines"
@@ -79,7 +88,7 @@ class TempModuleTester(private val context: Context) {
     }
 
     suspend fun rmmod(moduleName: String): UnloadResult = withContext(Dispatchers.IO) {
-        val res = RootShell.exec("rmmod ${moduleName}")
+        val res = RootShell.exec("rmmod ${RootShell.shellArg(moduleName)}")
         if (res.code == 0) UnloadResult(true, null) else UnloadResult(false, res.err.ifBlank { "卸载失败" })
     }
 

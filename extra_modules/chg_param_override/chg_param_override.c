@@ -850,7 +850,7 @@ static int __init chg_override_init(void)
     /* 初始化目标结构 */
     memset(&g_targets, 0, sizeof(g_targets));
     
-    proc_entry = proc_create("chg_param_override", 0666, NULL, &proc_fops);
+    proc_entry = proc_create("chg_param_override", 0640, NULL, &proc_fops);
     if (!proc_entry)
         return -ENOMEM;
 

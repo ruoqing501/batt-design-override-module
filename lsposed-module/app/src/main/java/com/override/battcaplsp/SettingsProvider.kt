@@ -6,10 +6,13 @@ import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import androidx.datastore.preferences.preferencesDataStore
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
-import com.override.battcaplsp.core.Keys
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
+import com.override.battcaplsp.core.DeviceUtils
 import com.override.battcaplsp.core.HookSettingsKeys
+import com.override.battcaplsp.core.Keys
 
 class SettingsProvider : ContentProvider() {
     private val Context.dataStore by preferencesDataStore(name = "batt_override")
@@ -18,38 +21,36 @@ class SettingsProvider : ContentProvider() {
     override fun onCreate(): Boolean = true
 
     override fun query(uri: Uri, projection: Array<String>?, selection: String?, selectionArgs: Array<String>?, sortOrder: String?): Cursor? {
-        when (uri.path) {
-            "/capacity" -> {
-                val capMah = runBlocking {
-                    val p = context!!.dataStore.data.first()
-                    val uah = (p[Keys.designUah] ?: 0)
-                    (uah / 1000).toString()
+        // ContentProvider.query 是同步 API；将 DataStore 读取 offload 到 IO 并加超时，避免阻塞 binder 线程
+        return runBlocking(Dispatchers.IO) {
+            when (uri.path) {
+                "/capacity" -> {
+                    val capMah = withTimeoutOrNull(2000L) {
+                        val p = context!!.dataStore.data.first()
+                        val uah = (p[Keys.designUah] ?: 0)
+                        (uah / 1000).toString()
+                    } ?: "0"
+                    SingleStringCursor(capMah)
                 }
-                return SingleStringCursor(capMah)
-            }
-            "/hook_settings" -> {
-                val settings = runBlocking {
-                    val p = context!!.hookSettingsDataStore.data.first()
-                    val isMiui = try {
-                        val clz = Class.forName("android.os.SystemProperties")
-                        val get = clz.getMethod("get", String::class.java, String::class.java)
-                        val v = get.invoke(null, "ro.miui.ui.version.name", "") as String
-                        v.isNotEmpty() || android.os.Build.MANUFACTURER.contains("Xiaomi", true)
-                    } catch (_: Throwable) { android.os.Build.MANUFACTURER.contains("Xiaomi", true) }
-                    HookSettingsCursor(
-                        hookEnabled = if (isMiui) (p[HookSettingsKeys.hookEnabled] ?: true) else false,
-                        useSystemProp = p[HookSettingsKeys.useSystemProp] ?: true,
-                        customCapacity = p[HookSettingsKeys.customCapacity] ?: 0,
-                        displayCapacity = p[HookSettingsKeys.displayCapacity] ?: 0,
-                        hookTextView = p[HookSettingsKeys.hookTextView] ?: true,
-                        hookSharedPrefs = p[HookSettingsKeys.hookSharedPrefs] ?: true,
-                        hookJsonMethods = p[HookSettingsKeys.hookJsonMethods] ?: true
-                    )
+                "/hook_settings" -> {
+                    val settings = withTimeoutOrNull(2000L) {
+                        val p = context!!.hookSettingsDataStore.data.first()
+                        val isMiui = DeviceUtils.isMiuiDevice()
+                        HookSettingsCursor(
+                            hookEnabled = if (isMiui) (p[HookSettingsKeys.hookEnabled] ?: true) else false,
+                            useSystemProp = p[HookSettingsKeys.useSystemProp] ?: true,
+                            customCapacity = p[HookSettingsKeys.customCapacity] ?: 0,
+                            displayCapacity = p[HookSettingsKeys.displayCapacity] ?: 0,
+                            hookTextView = p[HookSettingsKeys.hookTextView] ?: true,
+                            hookSharedPrefs = p[HookSettingsKeys.hookSharedPrefs] ?: true,
+                            hookJsonMethods = p[HookSettingsKeys.hookJsonMethods] ?: true
+                        )
+                    } ?: HookSettingsCursor(false, true, 0, 0, true, true, true)
+                    settings
                 }
-                return settings
+                else -> null
             }
         }
-        return null
     }
 
     override fun getType(uri: Uri): String? = "vnd.android.cursor.item/string"

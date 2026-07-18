@@ -160,17 +160,22 @@ class SafeModuleInstaller(private val context: Context) {
     private suspend fun isModuleLoaded(moduleName: String): Boolean = withContext(Dispatchers.IO) {
         try {
             // 检查 /sys/module 目录
-            val sysModuleResult = RootShell.exec("[ -d /sys/module/$moduleName ] && echo 'loaded' || echo 'not_loaded'")
+            val sysModuleResult = RootShell.exec(
+                "[ -d ${RootShell.shellArg("/sys/module/$moduleName")} ] && echo 'loaded' || echo 'not_loaded'"
+            )
             if (sysModuleResult.code == 0 && sysModuleResult.out.trim() == "loaded") {
                 return@withContext true
             }
-            
+
             // 检查 /proc/modules
-            val procResult = RootShell.exec("grep -q '^$moduleName ' /proc/modules && echo 'loaded' || echo 'not_loaded'")
+            val procResult = RootShell.exec(
+                "if awk -v name=" + RootShell.shellArg(moduleName) +
+                " '$1 == name {found=1} END {if (found) exit 0; exit 1}' /proc/modules; then echo 'loaded'; else echo 'not_loaded'; fi"
+            )
             if (procResult.code == 0 && procResult.out.trim() == "loaded") {
                 return@withContext true
             }
-            
+
             false
         } catch (e: Exception) {
             logW("SafeModuleInstaller", "检查模块加载状态失败", e)
@@ -186,7 +191,7 @@ class SafeModuleInstaller(private val context: Context) {
             try {
                 if (isModuleLoaded(moduleName)) {
                     logD("SafeModuleInstaller", "卸载测试模块: $moduleName")
-                    val result = RootShell.exec("rmmod $moduleName")
+                    val result = RootShell.exec("rmmod ${RootShell.shellArg(moduleName)}")
                     if (result.code == 0) {
                         logD("SafeModuleInstaller", "模块卸载成功")
                     } else {
@@ -289,7 +294,7 @@ class SafeModuleInstaller(private val context: Context) {
             }
             
             // 检查模块信息
-            val modinfoResult = RootShell.exec("modinfo '$koFilePath' 2>/dev/null || echo 'modinfo_failed'")
+            val modinfoResult = RootShell.exec("modinfo ${RootShell.shellArg(koFilePath)} 2>/dev/null || echo 'modinfo_failed'")
             if (modinfoResult.out.contains("modinfo_failed")) {
                 return@withContext TestResult(
                     passed = false,

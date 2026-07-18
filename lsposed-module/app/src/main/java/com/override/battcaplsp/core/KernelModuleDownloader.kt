@@ -126,22 +126,23 @@ class KernelModuleDownloader(private val context: Context) {
         var lastError: Exception? = null
         
         repeat(maxRetries) { attempt ->
+            var connection: HttpURLConnection? = null
             try {
                 val url = URL("$GITHUB_API_BASE/releases")  // 获取所有releases而不仅仅是latest
-                val connection = url.openConnection() as HttpURLConnection
+                connection = url.openConnection() as HttpURLConnection
                 connection.connectTimeout = 12000
                 connection.readTimeout = 15000
                 connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
                 connection.setRequestProperty("User-Agent", ua)
-                
+
                 val code = connection.responseCode
                 if (code != HttpURLConnection.HTTP_OK) {
                     lastError = RuntimeException("HTTP $code")
                     android.util.Log.w("KernelModuleDownloader", "HTTP $code on attempt ${attempt + 1}")
                 } else {
-                    val response = connection.inputStream.bufferedReader().readText()
+                    val response = connection.inputStream.bufferedReader().use { it.readText() }
                     android.util.Log.d("KernelModuleDownloader", "Response length: ${response.length}")
-                    
+
                     // 解析所有releases
                     val releases = parseAllGitHubReleases(response)
                     if (releases.isNotEmpty()) {
@@ -157,11 +158,13 @@ class KernelModuleDownloader(private val context: Context) {
             } catch (e: Exception) {
                 lastError = e
                 android.util.Log.e("KernelModuleDownloader", "Attempt ${attempt + 1} failed", e)
+            } finally {
+                connection?.disconnect()
             }
             // 简单退避
             try { Thread.sleep((800L * (attempt + 1))) } catch (_: Throwable) {}
         }
-        
+
         android.util.Log.e("KernelModuleDownloader", "All attempts failed", lastError)
         return@withContext emptyList()
     }
@@ -172,23 +175,24 @@ class KernelModuleDownloader(private val context: Context) {
         val maxRetries = 3
         var lastError: Exception? = null
         repeat(maxRetries) { attempt ->
+            var connection: HttpURLConnection? = null
             try {
                 val url = URL("$GITHUB_API_BASE/releases/latest")
-                val connection = url.openConnection() as HttpURLConnection
+                connection = url.openConnection() as HttpURLConnection
                 connection.connectTimeout = 12000
                 connection.readTimeout = 15000
                 connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
                 connection.setRequestProperty("User-Agent", ua)
-                
+
                 val code = connection.responseCode
                 if (code != HttpURLConnection.HTTP_OK) {
                     // 可能被限流或网络错误；短暂重试
                     lastError = RuntimeException("HTTP $code")
                     android.util.Log.w("KernelModuleDownloader", "HTTP $code on attempt ${attempt + 1}")
                 } else {
-                    val response = connection.inputStream.bufferedReader().readText()
+                    val response = connection.inputStream.bufferedReader().use { it.readText() }
                     android.util.Log.d("KernelModuleDownloader", "Response length: ${response.length}")
-                    
+
                     // 首先尝试正则解析；失败则宽松匹配 .ko 文件名
                     val parsed = parseGitHubRelease(response)
                     if (parsed != null) {
@@ -211,6 +215,8 @@ class KernelModuleDownloader(private val context: Context) {
             } catch (e: Exception) {
                 lastError = e
                 android.util.Log.e("KernelModuleDownloader", "Attempt ${attempt + 1} failed", e)
+            } finally {
+                connection?.disconnect()
             }
             // 简单退避
             try { Thread.sleep((800L * (attempt + 1))) } catch (_: Throwable) {}
@@ -317,6 +323,12 @@ class KernelModuleDownloader(private val context: Context) {
         }
     }
     
+    /** 净化从 URL 提取的本地文件名，仅保留白名单字符，防止路径遍历 */
+    private fun sanitizeFileName(name: String): String {
+        val cleaned = name.replace(Regex("[^A-Za-z0-9._-]"), "_").removePrefix(".")
+        return if (cleaned.isBlank() || cleaned == "_") "module.ko" else cleaned.take(255)
+    }
+
     /** 获取内核模块存储目录 */
     private fun getModuleStorageDir(): File {
         val dir = File(context.filesDir, "kernel_modules")
@@ -466,41 +478,49 @@ class KernelModuleDownloader(private val context: Context) {
     
     /** 下载指定模块 */
     suspend fun downloadModule(moduleInfo: ModuleInfo, onProgress: ((Int) -> Unit)? = null): DownloadResult = withContext(Dispatchers.IO) {
+        var connection: HttpURLConnection? = null
         try {
             val url = URL(moduleInfo.downloadUrl)
-            val connection = url.openConnection() as HttpURLConnection
+            connection = url.openConnection() as HttpURLConnection
             connection.connectTimeout = 30000
             connection.readTimeout = 60000
             connection.setRequestProperty("User-Agent", "battcaplsp-app/1.0 (+https://github.com/ruoqing501)")
-            
+
             if (connection.responseCode != HttpURLConnection.HTTP_OK) {
                 return@withContext DownloadResult(
                     success = false,
                     message = "下载失败: HTTP ${connection.responseCode}"
                 )
             }
-            
+
             val contentLength = connection.contentLengthLong
             val storageDir = getModuleStorageDir()
-            
-            // 使用与 GitHub 文件名相同的命名格式
+
+            // 使用与 GitHub 文件名相同的命名格式，但先净化防止路径遍历
             val originalFileName = moduleInfo.downloadUrl.substringAfterLast("/")
-            val localFile = File(storageDir, originalFileName)
+            val safeFileName = sanitizeFileName(originalFileName)
+            if (!safeFileName.endsWith(".ko")) {
+                return@withContext DownloadResult(
+                    success = false,
+                    message = "无效的文件名: $originalFileName"
+                )
+            }
+            val localFile = File(storageDir, safeFileName)
             // 覆盖策略: 若已存在同名文件先删除，确保重新下载（符合“不要使用本地缓存”需求）
             if (localFile.exists()) {
                 runCatching { localFile.delete() }
             }
-            
+
             connection.inputStream.use { input ->
                 FileOutputStream(localFile).use { output ->
                     val buffer = ByteArray(8192)
                     var totalBytesRead = 0L
                     var bytesRead: Int
-                    
+
                     while (input.read(buffer).also { bytesRead = it } != -1) {
                         output.write(buffer, 0, bytesRead)
                         totalBytesRead += bytesRead
-                        
+
                         if (contentLength > 0) {
                             val progress = (totalBytesRead * 100 / contentLength).toInt()
                             onProgress?.invoke(progress)
@@ -508,7 +528,7 @@ class KernelModuleDownloader(private val context: Context) {
                     }
                 }
             }
-            
+
             // 验证文件完整性（如果提供了 SHA256）
             if (moduleInfo.sha256 != null) {
                 val actualSha256 = calculateSHA256(localFile)
@@ -520,19 +540,21 @@ class KernelModuleDownloader(private val context: Context) {
                     )
                 }
             }
-            
+
             DownloadResult(
                 success = true,
                 message = "下载成功",
                 localPath = localFile.absolutePath,
                 fileSize = localFile.length()
             )
-            
+
         } catch (e: Exception) {
             DownloadResult(
                 success = false,
                 message = "下载异常: ${e.message}"
             )
+        } finally {
+            connection?.disconnect()
         }
     }
 

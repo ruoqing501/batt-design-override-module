@@ -3,6 +3,13 @@
 
 MODDIR=${0%/*}
 
+# Logging helpers (post-fs-data.sh runs independently from service.sh)
+LOGFILE="$MODDIR/log.txt"
+_log() { echo "[magisk-batt][post-fs-data] $*" | tee -a "$LOGFILE" >/dev/null; }
+_logcat() { command -v log >/dev/null 2>&1 && log -p i -t magisk-batt "[post-fs-data] $*"; }
+logi() { _log "$*"; _logcat "$*"; }
+logw() { _log "[warn] $*"; _logcat "[warn] $*"; }
+
 # Load params
 . "$MODDIR/common/params.conf"
 
@@ -202,6 +209,20 @@ for APK in "$MODDIR"/system/vendor/overlay/*.apk; do
   fi
 done
 
-pm disable com.miui.securitycenter/com.miui.powercenter.provider.PowerSaveService
+# 仅在 MIUI/HyperOS 设备且 device_features 覆盖启用时，禁用省电服务
+if [ "$DEVICE_FEATURES_ENABLE" = "1" ]; then
+  MIUI_VERSION=$(getprop ro.miui.ui.version.name 2>/dev/null)
+  if [ -n "$MIUI_VERSION" ]; then
+    if pm disable com.miui.securitycenter/com.miui.powercenter.provider.PowerSaveService >/dev/null 2>&1; then
+      logi "disabled MIUI power save service"
+    else
+      logw "failed to disable MIUI power save service"
+    fi
+  else
+    logi "skip pm disable: not MIUI/HyperOS device"
+  fi
+else
+  logi "skip pm disable: DEVICE_FEATURES_ENABLE != 1"
+fi
 
 exit 0

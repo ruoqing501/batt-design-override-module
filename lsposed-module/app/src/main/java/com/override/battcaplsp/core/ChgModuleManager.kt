@@ -24,12 +24,15 @@ class ChgModuleManager(
         
         // 如果直接访问失败，使用 root shell 检测
         return@withContext try {
-            val result = RootShell.exec("[ -e '$procPath' ] && echo 'exists' || echo 'not_exists'")
+            val result = RootShell.exec("[ -e ${RootShell.shellArg(procPath)} ] && echo 'exists' || echo 'not_exists'")
             result.code == 0 && result.out.trim() == "exists"
         } catch (e: Exception) {
-            // 最后尝试通过 lsmod 检测
+            // 最后尝试通过 /proc/modules 检测
             try {
-                val lsmodResult = RootShell.exec("lsmod | grep '^$moduleName ' | wc -l")
+                val lsmodResult = RootShell.exec(
+                    "awk -v name=" + RootShell.shellArg(moduleName) +
+                    " '$1 == name {found=1} END {print found+0}' /proc/modules"
+                )
                 lsmodResult.code == 0 && lsmodResult.out.trim().toIntOrNull() ?: 0 > 0
             } catch (e2: Exception) {
                 false
@@ -150,12 +153,12 @@ class ChgModuleManager(
         }
         // 确保末尾有换行，便于内核逐行解析
         val payload = if (builder.endsWith("\n")) builder else builder + "\n"
-        val result = RootShell.exec("printf %s "+RootShell.shellArg(payload)+" | tee "+procPath)
-        
+        val result = RootShell.exec("printf %s " + RootShell.shellArg(payload) + " | tee " + RootShell.shellArg(procPath))
+
         // 如果写入失败，检查是否是权限问题或设备不支持
         if (result.code != 0) {
             // 检查 /proc 文件是否存在且可写
-            val checkProc = RootShell.exec("[ -w $procPath ] && echo 'writable' || echo 'not_writable'")
+            val checkProc = RootShell.exec("[ -w ${RootShell.shellArg(procPath)} ] && echo 'writable' || echo 'not_writable'")
             if (checkProc.out.trim() != "writable") {
                 return@withContext RootShell.ExecResult(1, result.out, 
                     "无法写入 $procPath: 文件不可写或不存在。请确保模块已正确加载。")
@@ -229,7 +232,7 @@ class ChgModuleManager(
         return RootShell.exec("insmod "+shellQuoteIfNeeded(koPath)+args)
     }
 
-    suspend fun unload(): RootShell.ExecResult = RootShell.exec("rmmod $moduleName")
+    suspend fun unload(): RootShell.ExecResult = RootShell.exec("rmmod ${RootShell.shellArg(moduleName)}")
 
     // -------- PD helper via userspace script --------
     private val pdScript = "/data/local/tmp/pd_service.sh"
@@ -272,8 +275,8 @@ class ChgModuleManager(
         """.trimIndent()
         
         val cmds = listOf(
-            "cat > $pdScript <<'EOF'\n$script\nEOF",
-            "chmod 755 $pdScript"
+            "cat > ${RootShell.shellArg(pdScript)} <<'EOF'\n$script\nEOF",
+            "chmod 755 ${RootShell.shellArg(pdScript)}"
         ).joinToString(" && ")
         
         android.util.Log.d("ChgModuleManager", "执行部署命令: $cmds")
@@ -287,7 +290,7 @@ class ChgModuleManager(
         android.util.Log.d("ChgModuleManager", "开始启动PD守护进程")
         
         // 先检查脚本是否存在
-        val checkScript = RootShell.exec("[ -f $pdScript ] && echo 'exists' || echo 'not_exists'")
+        val checkScript = RootShell.exec("[ -f ${RootShell.shellArg(pdScript)} ] && echo 'exists' || echo 'not_exists'")
         android.util.Log.d("ChgModuleManager", "脚本检查结果: ${checkScript.out}")
         
         if (checkScript.out.trim() != "exists") {
@@ -299,20 +302,20 @@ class ChgModuleManager(
         stopPdHelper()
         
         // 启动新进程
-        val cmd = "nohup $pdScript >/dev/null 2>&1 & echo \$! > $pdPid"
+        val cmd = "nohup ${RootShell.shellArg(pdScript)} >/dev/null 2>&1 & echo \$! > ${RootShell.shellArg(pdPid)}"
         android.util.Log.d("ChgModuleManager", "执行启动命令: $cmd")
-        
+
         val result = RootShell.exec(cmd)
         android.util.Log.d("ChgModuleManager", "启动结果: code=${result.code}, out=${result.out}, err=${result.err}")
-        
+
         // 验证进程是否启动成功
         if (result.code == 0) {
-            val pidCheck = RootShell.exec("[ -f $pdPid ] && cat $pdPid || echo 'no_pid'")
+            val pidCheck = RootShell.exec("[ -f ${RootShell.shellArg(pdPid)} ] && cat ${RootShell.shellArg(pdPid)} || echo 'no_pid'")
             android.util.Log.d("ChgModuleManager", "PID文件检查: ${pidCheck.out}")
-            
+
             if (pidCheck.out.trim() != "no_pid") {
                 val pid = pidCheck.out.trim()
-                val processCheck = RootShell.exec("ps | grep '^$pid ' || echo 'not_running'")
+                val processCheck = RootShell.exec("ps | grep '^" + RootShell.shellArg(pid) + " ' || echo 'not_running'")
                 android.util.Log.d("ChgModuleManager", "进程检查: ${processCheck.out}")
             }
         }
@@ -323,7 +326,7 @@ class ChgModuleManager(
     suspend fun stopPdHelper(): RootShell.ExecResult {
         android.util.Log.d("ChgModuleManager", "停止PD守护进程")
         
-        val cmd = "if [ -f $pdPid ]; then kill $(cat $pdPid) 2>/dev/null; rm -f $pdPid; echo 'stopped'; else echo 'no_pid_file'; fi"
+        val cmd = "if [ -f ${RootShell.shellArg(pdPid)} ]; then kill \$(cat ${RootShell.shellArg(pdPid)}) 2>/dev/null; rm -f ${RootShell.shellArg(pdPid)}; echo 'stopped'; else echo 'no_pid_file'; fi"
         android.util.Log.d("ChgModuleManager", "执行停止命令: $cmd")
         
         val result = RootShell.exec(cmd)
@@ -336,15 +339,15 @@ class ChgModuleManager(
     suspend fun checkPdHelperStatus(): String {
         return try {
             // 检查PID文件
-            val pidCheck = RootShell.exec("[ -f $pdPid ] && cat $pdPid || echo 'no_pid'")
+            val pidCheck = RootShell.exec("[ -f ${RootShell.shellArg(pdPid)} ] && cat ${RootShell.shellArg(pdPid)} || echo 'no_pid'")
             if (pidCheck.out.trim() == "no_pid") {
                 return "未运行"
             }
-            
+
             val pid = pidCheck.out.trim()
-            
+
             // 检查进程是否还在运行
-            val processCheck = RootShell.exec("ps | grep '^$pid ' || echo 'not_running'")
+            val processCheck = RootShell.exec("ps | grep '^" + RootShell.shellArg(pid) + " ' || echo 'not_running'")
             if (processCheck.out.trim() == "not_running") {
                 return "PID文件存在但进程未运行"
             }
@@ -366,7 +369,7 @@ class ChgModuleManager(
     /** Read current values from /proc/chg_param_override and return as a map. */
     suspend fun readCurrent(): Map<String, String> = withContext(Dispatchers.IO) {
         if (!isLoaded()) return@withContext emptyMap()
-        val r = RootShell.exec("cat "+procPath+" 2>/dev/null || true")
+        val r = RootShell.exec("cat " + RootShell.shellArg(procPath) + " 2>/dev/null || true")
         if (r.code != 0 || r.out.isBlank()) return@withContext emptyMap()
         val map = mutableMapOf<String, String>()
         val lines = r.out.split('\n')
@@ -425,20 +428,9 @@ class ChgModuleManager(
     
     /** 检测设备是否支持 PD 协议切换（pd_verifed） */
     private suspend fun supportsPdSwitch(): Boolean = withContext(Dispatchers.IO) {
-        // 检测方法1: 检查是否为小米设备
-        val isMiui = try {
-            val clz = Class.forName("android.os.SystemProperties")
-            val get = clz.getMethod("get", String::class.java, String::class.java)
-            val v = get.invoke(null, "ro.miui.ui.version.name", "") as String
-            v.isNotEmpty() || android.os.Build.MANUFACTURER.contains("Xiaomi", ignoreCase = true) ||
-            android.os.Build.MANUFACTURER.contains("Redmi", ignoreCase = true) ||
-            android.os.Build.MANUFACTURER.contains("POCO", ignoreCase = true)
-        } catch (_: Throwable) {
-            android.os.Build.MANUFACTURER.contains("Xiaomi", ignoreCase = true) ||
-            android.os.Build.MANUFACTURER.contains("Redmi", ignoreCase = true) ||
-            android.os.Build.MANUFACTURER.contains("POCO", ignoreCase = true)
-        }
-        
+        // 检测方法1: 检查是否为小米/MIUI/HyperOS 设备
+        val isMiui = DeviceUtils.isMiuiDevice()
+
         // 检测方法2: 检查 sysfs 节点是否存在
         val pdPath = "/sys/class/qcom-battery/pd_verifed"
         val checkResult = RootShell.exec("[ -e '$pdPath' ] && echo 'exists' || echo 'not_exists'")
@@ -461,7 +453,7 @@ class ChgModuleManager(
         
         suspend fun readSysfs(path: String): String? {
             return try {
-                val result = RootShell.exec("cat $path 2>/dev/null || echo ''")
+                val result = RootShell.exec("cat " + RootShell.shellArg(path) + " 2>/dev/null || echo ''")
                 if (result.code == 0 && result.out.isNotBlank()) result.out.trim() else null
             } catch (e: Exception) {
                 null
@@ -522,18 +514,7 @@ class ChgModuleManager(
         
         // 检测是否支持 PD 协议切换（同步检测，避免嵌套 suspend）
         val supportsSwitch = runCatching {
-            val isMiui = try {
-                val clz = Class.forName("android.os.SystemProperties")
-                val get = clz.getMethod("get", String::class.java, String::class.java)
-                val v = get.invoke(null, "ro.miui.ui.version.name", "") as String
-                v.isNotEmpty() || android.os.Build.MANUFACTURER.contains("Xiaomi", ignoreCase = true) ||
-                android.os.Build.MANUFACTURER.contains("Redmi", ignoreCase = true) ||
-                android.os.Build.MANUFACTURER.contains("POCO", ignoreCase = true)
-            } catch (_: Throwable) {
-                android.os.Build.MANUFACTURER.contains("Xiaomi", ignoreCase = true) ||
-                android.os.Build.MANUFACTURER.contains("Redmi", ignoreCase = true) ||
-                android.os.Build.MANUFACTURER.contains("POCO", ignoreCase = true)
-            }
+            val isMiui = DeviceUtils.isMiuiDevice()
             // 检查 sysfs 节点是否存在
             val nodeCheck = RootShell.exec("[ -e '$pdPath' ] && echo 'exists' || echo 'not_exists'")
             val nodeExists = nodeCheck.out.trim() == "exists"
@@ -587,7 +568,7 @@ class ChgModuleManager(
         val pdPath = "/sys/class/qcom-battery/pd_verifed"
         val checkResult = RootShell.exec("[ -e '$pdPath' ] && echo 'exists' || echo 'not_exists'")
         if (checkResult.out.trim() == "exists") {
-            val writeResult = RootShell.exec("echo $value > $pdPath")
+            val writeResult = RootShell.exec("echo ${RootShell.shellArg(value.toString())} > ${RootShell.shellArg(pdPath)}")
             if (writeResult.code == 0) {
                 return@withContext writeResult
             }

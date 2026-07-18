@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.runBlocking
 
 private val Context.dataStore by preferencesDataStore(name = "batt_override")
 
@@ -39,9 +38,9 @@ data class UiState(
 )
 
 class ParamRepository(private val ctx: Context, private val moduleManager: ModuleManager) {
-    // 内部：DataStore 基础流
+    // 内部：DataStore 基础流（Flow.map 的 transform 已是 suspend 上下文，无需 runBlocking）
     private val prefsFlow: Flow<UiState> = ctx.dataStore.data.map { p ->
-        runBlocking { toStateAsync(p) }
+        toStateAsync(p)
     }
 
     // 模块加载状态独立可刷新流
@@ -92,7 +91,7 @@ class ParamRepository(private val ctx: Context, private val moduleManager: Modul
             p[Keys.verbose] = if (n.verbose) 1 else 0
             p[Keys.koPath] = n.koPath
         }
-        // 更新持久化后尝试刷新加载状态（不会显著阻塞）
-        runBlocking { refresh() }
+        // 更新持久化后刷新加载状态
+        refresh()
     }
 }

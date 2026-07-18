@@ -121,47 +121,50 @@ class ApkDownloadManager(private val context: Context) {
         try {
             val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             val query = DownloadManager.Query().setFilterById(downloadId)
-            val cursor = downloadManager.query(query)
-            
-            if (cursor.moveToFirst()) {
-                val status = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS))
-                val localUri = cursor.getString(cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI))
-                
-                when (status) {
-                    DownloadManager.STATUS_SUCCESSFUL -> {
-                        DownloadResult(
-                            success = true,
-                            filePath = localUri
-                        )
-                    }
-                    DownloadManager.STATUS_FAILED -> {
-                        val reason = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_REASON))
-                        DownloadResult(
-                            success = false,
-                            error = "下载失败，错误代码: $reason"
-                        )
-                    }
-                    DownloadManager.STATUS_PENDING,
-                    DownloadManager.STATUS_RUNNING,
-                    DownloadManager.STATUS_PAUSED -> {
-                        DownloadResult(
-                            success = false,
-                            error = "下载进行中..."
-                        )
-                    }
-                    else -> {
-                        DownloadResult(
-                            success = false,
-                            error = "未知下载状态: $status"
-                        )
+            downloadManager.query(query)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val status = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS))
+                    val localUri = cursor.getString(cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI))
+
+                    return@withContext when (status) {
+                        DownloadManager.STATUS_SUCCESSFUL -> {
+                            DownloadResult(
+                                success = true,
+                                filePath = localUri
+                            )
+                        }
+                        DownloadManager.STATUS_FAILED -> {
+                            val reason = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_REASON))
+                            DownloadResult(
+                                success = false,
+                                error = "下载失败，错误代码: $reason"
+                            )
+                        }
+                        DownloadManager.STATUS_PENDING,
+                        DownloadManager.STATUS_RUNNING,
+                        DownloadManager.STATUS_PAUSED -> {
+                            DownloadResult(
+                                success = false,
+                                error = "下载进行中..."
+                            )
+                        }
+                        else -> {
+                            DownloadResult(
+                                success = false,
+                                error = "未知下载状态: $status"
+                            )
+                        }
                     }
                 }
-            } else {
-                DownloadResult(
+                return@withContext DownloadResult(
                     success = false,
                     error = "无法查询下载状态"
                 )
             }
+            DownloadResult(
+                success = false,
+                error = "无法查询下载状态"
+            )
         } catch (e: Exception) {
             android.util.Log.e("ApkDownloadManager", "检查下载状态失败", e)
             DownloadResult(

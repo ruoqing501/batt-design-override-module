@@ -1,42 +1,39 @@
 package com.override.battcaplsp.core
 
 import android.content.Context
-import kotlinx.coroutines.runBlocking
 
 object ConfigSync {
     // 动态获取模块路径，优先使用动态模块，兼容旧模块
-    private fun getModuleConfPath(context: Context): String {
-        return runBlocking {
-            try {
-                MagiskModuleManager(context)
-                
-                // 检查动态模块是否存在
-                val dynamicPath = "/data/adb/modules/batt-design-override-dynamic/common/params.conf"
-                val checkDynamic = RootShell.exec("[ -d '/data/adb/modules/batt-design-override-dynamic' ]")
-                if (checkDynamic.code == 0) {
-                    return@runBlocking dynamicPath
-                }
-                
-                // 检查旧模块是否存在
-                val legacyPath = "/data/adb/modules/batt-design-override/common/params.conf"
-                val checkLegacy = RootShell.exec("[ -d '/data/adb/modules/batt-design-override' ]")
-                if (checkLegacy.code == 0) {
-                    return@runBlocking legacyPath
-                }
-                
-                // 默认使用动态模块路径（应用会创建这个路径）
-                dynamicPath
-            } catch (e: Exception) {
-                // 出错时使用动态模块路径
-                "/data/adb/modules/batt-design-override-dynamic/common/params.conf"
+    private suspend fun getModuleConfPath(context: Context): String {
+        return try {
+            MagiskModuleManager(context)
+
+            // 检查动态模块是否存在
+            val dynamicPath = "/data/adb/modules/batt-design-override-dynamic/common/params.conf"
+            val checkDynamic = RootShell.exec("[ -d '/data/adb/modules/batt-design-override-dynamic' ]")
+            if (checkDynamic.code == 0) {
+                return dynamicPath
             }
+
+            // 检查旧模块是否存在
+            val legacyPath = "/data/adb/modules/batt-design-override/common/params.conf"
+            val checkLegacy = RootShell.exec("[ -d '/data/adb/modules/batt-design-override' ]")
+            if (checkLegacy.code == 0) {
+                return legacyPath
+            }
+
+            // 默认使用动态模块路径（应用会创建这个路径）
+            dynamicPath
+        } catch (e: Exception) {
+            // 出错时使用动态模块路径
+            "/data/adb/modules/batt-design-override-dynamic/common/params.conf"
         }
     }
 
     /** 读取 params.conf 内容为键值 Map（仅大写 KEY=VALUE 结构，不解析注释）。 */
-    fun readConf(context: Context): Map<String,String> = runBlocking {
+    suspend fun readConf(context: Context): Map<String,String> {
         val path = getModuleConfPath(context)
-        return@runBlocking try {
+        return try {
             val f = java.io.File(path)
             if (!f.exists()) emptyMap() else buildMap {
                 f.readLines().forEach { line ->
@@ -96,8 +93,13 @@ object ConfigSync {
                 // 需要更新的键集合（全部大写与 service.sh 约定一致）
                 // val keys = listOf("BATT_NAME","DESIGN_UAH","DESIGN_UWH","MODEL_NAME","OVERRIDE_ANY","VERBOSE")
 
+                val confArg = RootShell.shellArg(confPath)
+                val bnArg = RootShell.shellArg(bn)
+                val mnArg = RootShell.shellArg(mn)
                 val script = """
-                CONF="${confPath}"
+                CONF=${confArg}
+                BN=${bnArg}
+                MN=${mnArg}
                 mkdir -p "${'$'}(dirname "${'$'}CONF")" || exit 1
                 TMP="${'$'}CONF.tmp.$$"
                 # 如果存在旧文件，先过滤掉将要更新的键，保留其它键，再写入临时文件
@@ -107,10 +109,10 @@ object ConfigSync {
                     : > "${'$'}TMP" || exit 1
                 fi
                 {
-                    echo "BATT_NAME=\"${bn}\""
+                    echo "BATT_NAME=\"${'$'}BN\""
                     echo "DESIGN_UAH=${duah}"
                     echo "DESIGN_UWH=${duwh}"
-                    echo "MODEL_NAME=\"${mn}\""
+                    echo "MODEL_NAME=\"${'$'}MN\""
                     echo "OVERRIDE_ANY=${oa}"
                     echo "VERBOSE=${vb}"
                 } >> "${'$'}TMP"
@@ -159,8 +161,13 @@ object ConfigSync {
                 val ivlV = ChgParamValidator.clampIvl(ivl)
                 val cl = ChgParamValidator.clampChargeLimit(chargeLimit)
 
+                val confArg = RootShell.shellArg(confPath)
+                val bArg = RootShell.shellArg(b)
+                val uArg = RootShell.shellArg(u)
                 val script = """
-                CONF="${confPath}"
+                CONF=${confArg}
+                BATT=${bArg}
+                USB=${uArg}
                 mkdir -p "${'$'}(dirname "${'$'}CONF")" || exit 1
                 TMP="${'$'}CONF.tmp.$$"
                 if [ -f "${'$'}CONF" ]; then
@@ -170,8 +177,8 @@ object ConfigSync {
                 fi
                 {
                     echo "CHG_APPLY_ON_BOOT=0"
-                    echo "CHG_BATT_NAME=\"${b}\""
-                    echo "CHG_USB_NAME=\"${u}\""
+                    echo "CHG_BATT_NAME=\"${'$'}BATT\""
+                    echo "CHG_USB_NAME=\"${'$'}USB\""
                     echo "CHG_VOLTAGE_MAX_UV=${vmax}"
                     echo "CHG_CCC_UA=${cccV}"
                     echo "CHG_TERM_UA=${termV}"

@@ -88,8 +88,9 @@ class ModuleManager(
         for (searchPath in searchPaths) {
             for (fileName in possibleFileNames) {
                 val filePath = "$searchPath/$fileName"
+                val filePathArg = RootShell.shellArg(filePath)
                 // 使用 -s 检查文件存在且不为空
-                checkCmd.append("if [ -s '$filePath' ]; then echo '$filePath'; exit 0; fi; ")
+                checkCmd.append("if [ -s ").append(filePathArg).append(" ]; then echo ").append(filePathArg).append("; exit 0; fi; ")
             }
         }
         checkCmd.append("echo 'not_found'")
@@ -196,14 +197,14 @@ class ModuleManager(
         
         for (searchPath in searchPaths) {
             debugInfo.appendLine("搜索路径: $searchPath")
-            
+
             // 检查路径是否存在
-            val pathCheckResult = RootShell.exec("[ -d '$searchPath' ] && echo 'exists' || echo 'not_exists'")
+            val pathCheckResult = RootShell.exec("[ -d ${RootShell.shellArg(searchPath)} ] && echo 'exists' || echo 'not_exists'")
             debugInfo.appendLine("  路径状态: ${pathCheckResult.out.trim()}")
-            
+
             if (pathCheckResult.code == 0 && pathCheckResult.out.trim() == "exists") {
                 // 列出路径中的所有 .ko 文件
-                val listResult = RootShell.exec("ls -la '$searchPath'/*.ko 2>/dev/null || echo 'no_ko_files'")
+                val listResult = RootShell.exec("ls -la ${RootShell.shellArg(searchPath)}/*.ko 2>/dev/null || echo 'no_ko_files'")
                 if (listResult.out.trim() != "no_ko_files") {
                     debugInfo.appendLine("  可用的 .ko 文件:")
                     listResult.out.split('\n').forEach { line ->
@@ -236,7 +237,10 @@ class ModuleManager(
 
         // 次级检查：/proc/modules 存在条目
         try {
-            val procRes = RootShell.exec("cat /proc/modules | grep -E '^${moduleName}\\s' | wc -l")
+            val procRes = RootShell.exec(
+                "awk -v name=" + RootShell.shellArg(moduleName) +
+                " '$1 == name {found=1} END {print found+0}' /proc/modules"
+            )
             val count = procRes.out.trim().toIntOrNull() ?: 0
             if (procRes.code == 0 && count > 0) return@withContext true
         } catch (_: Throwable) {
@@ -245,7 +249,11 @@ class ModuleManager(
 
         // 最后保守检查：/sys/module/<name> 目录是否存在 且 parameters 目录存在（减少误报）
         try {
-            val res = RootShell.exec("[ -d '$sysModuleBase/$moduleName' ] && [ -d '$sysModuleBase/$moduleName/parameters' ] && echo live || echo not")
+            val moduleDir = "$sysModuleBase/$moduleName"
+            val paramsDir = "$sysModuleBase/$moduleName/parameters"
+            val res = RootShell.exec(
+                "[ -d ${RootShell.shellArg(moduleDir)} ] && [ -d ${RootShell.shellArg(paramsDir)} ] && echo live || echo not"
+            )
             if (res.code == 0 && res.out.trim() == "live") return@withContext true
         } catch (_: Throwable) {
             // ignore
@@ -298,7 +306,7 @@ class ModuleManager(
         return RootShell.exec("insmod ${shellQuoteIfNeeded(koPath)}$args")
     }
 
-    suspend fun unload(): RootShell.ExecResult = RootShell.exec("rmmod $moduleName")
+    suspend fun unload(): RootShell.ExecResult = RootShell.exec("rmmod ${RootShell.shellArg(moduleName)}")
 
     private fun shellQuote(s: String): String = "'" + s.replace("'", "'\\''") + "'"
 

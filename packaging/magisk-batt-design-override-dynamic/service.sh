@@ -33,20 +33,18 @@ if [ -f "$KOMOD" ]; then
   # Try to insmod with parameters; fall back to modprobe if available
   # 仅当配置了 MODEL_NAME（非空）时才传递，避免空字符串影响判断；
   # 但 insmod 传空字符串也问题不大，这里做条件控制更直观。
-  if [ -n "${MODEL_NAME:-}" ]; then
-    INS_ARGS="batt_name=\"$BATT_NAME\" design_uah=$DESIGN_UAH design_uwh=$DESIGN_UWH model_name=\"$MODEL_NAME\" override_any=$OVERRIDE_ANY verbose=$VERBOSE"
-  else
-    INS_ARGS="batt_name=\"$BATT_NAME\" design_uah=$DESIGN_UAH design_uwh=$DESIGN_UWH override_any=$OVERRIDE_ANY verbose=$VERBOSE"
-  fi
-  if eval insmod "$KOMOD" $INS_ARGS 2>>"$LOGFILE"; then
+  # Build argument list safely without eval
+  set --
+  set -- "$@" "batt_name=$BATT_NAME"
+  set -- "$@" "design_uah=$DESIGN_UAH"
+  set -- "$@" "design_uwh=$DESIGN_UWH"
+  [ -n "${MODEL_NAME:-}" ] && set -- "$@" "model_name=$MODEL_NAME"
+  set -- "$@" "override_any=$OVERRIDE_ANY"
+  set -- "$@" "verbose=$VERBOSE"
+  if insmod "$KOMOD" "$@" 2>>"$LOGFILE"; then
     logi "insmod success"
   elif command -v modprobe >/dev/null 2>&1; then
-    if [ -n "${MODEL_NAME:-}" ]; then
-      MOD_ARGS="batt_name=\"$BATT_NAME\" design_uah=$DESIGN_UAH design_uwh=$DESIGN_UWH model_name=\"$MODEL_NAME\" override_any=$OVERRIDE_ANY verbose=$VERBOSE"
-    else
-      MOD_ARGS="batt_name=\"$BATT_NAME\" design_uah=$DESIGN_UAH design_uwh=$DESIGN_UWH override_any=$OVERRIDE_ANY verbose=$VERBOSE"
-    fi
-    if eval modprobe "$KOMOD" $MOD_ARGS 2>>"$LOGFILE"; then
+    if modprobe "$KOMOD" "$@" 2>>"$LOGFILE"; then
       logi "modprobe success"
     else
       logi "modprobe failed"
@@ -80,8 +78,8 @@ auto_install_lsp() {
   local pkg="${LSP_PKG_NAME:-com.example.battcaplsp}"
   local apk_path_cfg="${LSP_APK_PATH:-$MODDIR/common/battcaplsp.apk}"
   local apk_path="$apk_path_cfg"
-  # 若路径中包含 ${MODDIR} 变量文本，展开
-  apk_path=$(eval echo "$apk_path")
+  # 若路径中包含 ${MODDIR} 变量文本，安全展开（避免 eval）
+  apk_path=$(echo "$apk_path" | sed "s|\\\${MODDIR}|$MODDIR|g")
   if [ "${AUTO_INSTALL_LSPOSED:-0}" != "1" ]; then
     return
   fi

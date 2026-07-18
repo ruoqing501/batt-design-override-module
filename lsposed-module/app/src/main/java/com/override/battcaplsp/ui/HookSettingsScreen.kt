@@ -122,16 +122,7 @@ fun HookSettingsScreen(
     var apkPhase by remember { mutableStateOf("idle") }
     val apkDownloadManager = remember { com.override.battcaplsp.core.ApkDownloadManager(context) }
 
-    val isMiuiDevice = remember {
-        try {
-            val clz = Class.forName("android.os.SystemProperties")
-            val get = clz.getMethod("get", String::class.java, String::class.java)
-            val v = get.invoke(null, "ro.miui.ui.version.name", "") as String
-            v.isNotEmpty() || android.os.Build.MANUFACTURER.contains("Xiaomi", ignoreCase = true)
-        } catch (_: Throwable) {
-            android.os.Build.MANUFACTURER.contains("Xiaomi", ignoreCase = true)
-        }
-    }
+    val isMiuiDevice = remember { DeviceUtils.isMiuiDevice() }
 
     val statusTtlMs = 5000L
     val modulesTtlMs = 60000L

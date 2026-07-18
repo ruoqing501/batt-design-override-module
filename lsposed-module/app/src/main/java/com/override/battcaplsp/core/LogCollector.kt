@@ -16,9 +16,13 @@ object LogCollector {
 
     /** 获取最近日志末尾 maxLines 行；失败返回空字符串。 */
     fun getRecentLogs(maxLines: Int = 400): String {
-        return try {
+        val proc = try {
             // -d 只读取并退出；-v time 保留时间戳；不加过滤先全量读再截尾
-            val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time"))
+            Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time"))
+        } catch (e: Exception) {
+            return "获取日志失败: ${e.message}"
+        }
+        return try {
             proc.inputStream.bufferedReader().use(BufferedReader::readText)
                 .lineSequence()
                 .toList()
@@ -31,7 +35,9 @@ object LogCollector {
                     }
                 }
         } catch (e: Exception) {
-            "获取日志失败: ${e.message}".also { _ -> }
+            "获取日志失败: ${e.message}"
+        } finally {
+            proc.destroy()
         }
     }
 }
