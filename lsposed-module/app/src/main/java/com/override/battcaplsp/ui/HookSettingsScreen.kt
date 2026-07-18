@@ -140,6 +140,12 @@ fun HookSettingsScreen(
         val now = System.currentTimeMillis()
         if (!force && !initialLoading && (now - HookSettingsStatusCache.lastStatusLoadTime) < statusTtlMs && rootStatus != null) return
 
+        if (force) {
+            RootShell.clearCache()
+            battMgr.clearCache()
+            chgMgr.clearCache()
+        }
+
         coroutineScope {
             launch {
                 val newRoot = RootShell.getRootStatus(forceRefresh = force)
@@ -339,8 +345,6 @@ fun HookSettingsScreen(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(AppDimensions.SpaceMedium)
     ) {
-        SettingsHeader()
-
         ModuleDownloadSection(
             kernelVersion = kernelVersion,
             kernelVersionDetail = kernelVersionDetail,
@@ -1038,45 +1042,6 @@ private fun ModuleDownloadDialog(
         },
         shape = MaterialTheme.shapes.extraLarge
     )
-}
-
-@Composable
-private fun SettingsHeader() {
-    AppCard {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppDimensions.SpaceMedium)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(MaterialTheme.shapes.extraLarge)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = null,
-                    modifier = Modifier.size(32.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "设置",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = "模块管理、Hook 选项与关于",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
 }
 
 @Composable

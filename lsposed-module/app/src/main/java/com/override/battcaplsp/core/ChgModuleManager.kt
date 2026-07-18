@@ -10,7 +10,12 @@ class ChgModuleManager(
     private val procPath: String = "/proc/chg_param_override"
 ) {
     private val battMgr by lazy { ModuleManager() }
-    
+
+    /** 清除内部缓存，用于刷新状态 */
+    fun clearCache() {
+        battMgr.clearCache()
+    }
+
     suspend fun isLoaded(): Boolean = withContext(Dispatchers.IO) {
         // 先尝试直接文件访问
         if (File(procPath).exists()) {

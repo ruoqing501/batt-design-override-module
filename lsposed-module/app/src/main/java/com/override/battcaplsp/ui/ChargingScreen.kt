@@ -50,9 +50,20 @@ fun ChargingScreen(repo: ChgParamRepository, mgr: ChgModuleManager) {
     var msg by remember { mutableStateOf("") }
     var kernelLog by remember { mutableStateOf("") }
     var protocolInfo by remember { mutableStateOf<ChgModuleManager.ChargingProtocolInfo?>(null) }
-    var showProtocolInfo by remember { mutableStateOf(false) }
+    var showProtocolInfo by remember { mutableStateOf(true) }
     var availableSwitchMethods by remember { mutableStateOf<List<ChgModuleManager.ProtocolSwitchMethod>>(emptyList()) }
     var selectedProtocol by remember { mutableStateOf("") }
+
+    LaunchedEffect(ui.loaded) {
+        if (ui.loaded) {
+            try {
+                protocolInfo = mgr.readChargingProtocolInfo(usb.text.trim().ifEmpty { "usb" })
+                availableSwitchMethods = mgr.detectAvailableSwitchMethods(usb.text.trim().ifEmpty { "usb" })
+            } catch (e: Exception) {
+                OpEvents.error("充电:自动读取协议信息失败 ${e.message}")
+            }
+        }
+    }
 
     fun showSnackbar(text: String) {
         scope.launch { snackbarHostState.showSnackbar(text) }

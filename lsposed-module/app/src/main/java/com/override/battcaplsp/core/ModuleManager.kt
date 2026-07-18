@@ -14,6 +14,11 @@ class ModuleManager(
     // 缓存内核版本，避免重复调用 shell
     private var cachedKernelVersion: KernelVersion? = null
 
+    /** 清除缓存，用于刷新状态 */
+    fun clearCache() {
+        cachedKernelVersion = null
+    }
+
     /** 获取当前内核版本信息 */
     suspend fun getKernelVersion(): KernelVersion {
         cachedKernelVersion?.let { return it }

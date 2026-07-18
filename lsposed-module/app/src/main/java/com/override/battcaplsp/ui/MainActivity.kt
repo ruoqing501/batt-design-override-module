@@ -262,6 +262,24 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                if (kernelMap.isNotEmpty()) {
+                    item {
+                        AppCard {
+                            SectionHeader(
+                                title = "内核参数",
+                                icon = Icons.Default.Memory,
+                                description = "点击任意行可复制完整键值"
+                            )
+                            Spacer(Modifier.height(AppDimensions.SpaceSmall))
+                            Column {
+                                for ((k, v) in kernelMap) {
+                                    KeyValueItem(key = k, value = v)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 item {
                     AppCard {
                         SectionHeader(
@@ -572,24 +590,6 @@ class MainActivity : ComponentActivity() {
                                 logText = kernelLog,
                                 maxHeight = 320
                             )
-                        }
-                    }
-                }
-
-                if (kernelMap.isNotEmpty()) {
-                    item {
-                        AppCard {
-                            SectionHeader(
-                                title = "内核参数",
-                                icon = Icons.Default.Memory,
-                                description = "点击任意行可复制完整键值"
-                            )
-                            Spacer(Modifier.height(AppDimensions.SpaceSmall))
-                            Column {
-                                for ((k, v) in kernelMap) {
-                                    KeyValueItem(key = k, value = v)
-                                }
-                            }
                         }
                     }
                 }

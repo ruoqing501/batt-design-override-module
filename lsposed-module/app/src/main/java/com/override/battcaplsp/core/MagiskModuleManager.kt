@@ -111,68 +111,55 @@ class MagiskModuleManager(private val context: Context) {
         return@withContext "$MAGISK_MODULES_PATH/$MODULE_ID_PRIMARY"
     }
     
-    /** 创建轻量级 Magisk 模块（不包含 .ko 文件，已安装应用时不包含 APK） */
+    /** 从 APK assets 安装默认动态 Magisk 模块 */
     suspend fun createLightweightModule(): ModuleInstallResult = withContext(Dispatchers.IO) {
         try {
             val modulePath = getModulePath()
-            
-            android.util.Log.d("MagiskModuleManager", "Creating module at: $modulePath")
-            
-            // 使用 root shell 创建目录结构
-            val createDirsResult = RootShell.exec("mkdir -p '$modulePath/common'")
-            if (createDirsResult.code != 0) {
-                android.util.Log.e("MagiskModuleManager", "Failed to create directories: ${createDirsResult.err}")
+            val assetZip = "dynamic-module.zip"
+            val tmpZip = File(context.cacheDir, "dynamic-module-install.zip")
+
+            android.util.Log.d("MagiskModuleManager", "Installing bundled dynamic module to: $modulePath")
+
+            // 从 assets 复制 zip 到临时目录
+            context.assets.open(assetZip).use { input ->
+                FileOutputStream(tmpZip).use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            // 清理旧模块目录并解压
+            val cleanResult = RootShell.exec("rm -rf '$modulePath'")
+            if (cleanResult.code != 0) {
+                android.util.Log.w("MagiskModuleManager", "Failed to clean old module: ${cleanResult.err}")
+            }
+
+            val extractResult = RootShell.exec("mkdir -p '$modulePath' && unzip -o '${tmpZip.absolutePath}' -d '$modulePath'")
+            if (extractResult.code != 0) {
+                android.util.Log.e("MagiskModuleManager", "Failed to extract module: ${extractResult.err}")
                 return@withContext ModuleInstallResult(
                     success = false,
-                    message = "创建目录失败: ${createDirsResult.err}"
+                    message = "解压模块失败: ${extractResult.err}"
                 )
             }
-            
-            // 创建 module.prop（使用 root shell）
-            val propResult = createModulePropWithRoot(modulePath)
-            if (!propResult) {
-                return@withContext ModuleInstallResult(
-                    success = false,
-                    message = "创建 module.prop 失败"
-                )
-            }
-            
-            // 创建 service.sh（使用 root shell）
-            val serviceResult = createServiceScriptWithRoot(modulePath)
-            if (!serviceResult) {
-                return@withContext ModuleInstallResult(
-                    success = false,
-                    message = "创建 service.sh 失败"
-                )
-            }
-            
-            // 创建默认配置文件（使用 root shell）
-            val configResult = createDefaultConfigWithRoot("$modulePath/common")
-            if (!configResult) {
-                return@withContext ModuleInstallResult(
-                    success = false,
-                    message = "创建配置文件失败"
-                )
-            }
-            
+
             // 设置正确的权限
-            val chmodResult = RootShell.exec("chmod -R 755 '$modulePath'")
-            if (chmodResult.code != 0) {
-                android.util.Log.w("MagiskModuleManager", "Failed to set permissions: ${chmodResult.err}")
-            }
-            
-            android.util.Log.d("MagiskModuleManager", "Module created successfully")
+            RootShell.exec("chmod -R 755 '$modulePath' && chmod 644 '$modulePath'/module.prop")
+
+            // 清理临时文件
+            tmpZip.delete()
+
+            android.util.Log.d("MagiskModuleManager", "Bundled dynamic module installed successfully")
             ModuleInstallResult(
                 success = true,
-                message = "轻量级模块创建成功（应用已安装）",
+                message = "默认动态模块安装成功，重启后生效",
                 modulePath = modulePath
             )
-            
+
         } catch (e: Exception) {
-            android.util.Log.e("MagiskModuleManager", "Exception creating module", e)
+            android.util.Log.e("MagiskModuleManager", "Exception installing bundled module", e)
             ModuleInstallResult(
                 success = false,
-                message = "模块创建失败: ${e.message}"
+                message = "模块安装失败: ${e.message}"
             )
         }
     }

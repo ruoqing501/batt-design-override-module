@@ -98,6 +98,31 @@ android {
             outputFileName = "battcaplsp-${verName}.apk"
         }
     }
+
+    // 打包默认动态 Magisk 模块到 assets
+    task packageDynamicModule(type: Exec) {
+        def repoRoot = rootProject.rootDir.parentFile
+        def script = new File(repoRoot, 'packaging/build_dynamic_magisk_zip.sh')
+        def outDir = layout.buildDirectory.dir('dynamic-module').get().asFile
+        workingDir repoRoot
+        commandLine 'bash', script.absolutePath, '--output', outDir.absolutePath
+        doFirst {
+            outDir.mkdirs()
+        }
+    }
+
+    task copyDynamicModuleToAssets(type: Copy) {
+        dependsOn packageDynamicModule
+        from(layout.buildDirectory.dir('dynamic-module')) {
+            include 'batt-design-override-dynamic-*.zip'
+        }
+        into layout.projectDirectory.dir('src/main/assets/')
+        rename { String fileName ->
+            'dynamic-module.zip'
+        }
+    }
+
+    preBuild.dependsOn copyDynamicModuleToAssets
 }
 
 dependencies {
