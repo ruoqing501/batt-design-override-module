@@ -213,90 +213,10 @@ else
   log "insmod 成功"
 fi
 
-# ========== 可选：加载 chg_param_override.ko 并应用参数 ==========
-# 查找 chg 模块，支持新旧格式
-CHG_KO=""
-# 优先级0: 新格式 androidXX-kernel_chg_param_override.ko
-for android_ver in $ANDROID_VERSIONS; do
-    # 尝试完整版本
-    ko_file="$COMM_DIR/${android_ver}-${KREL}_chg_param_override.ko"
-    if [ -f "$ko_file" ]; then
-        CHG_KO="$ko_file"
-        log "找到新格式 chg 模块 (完整版本): $(basename "$CHG_KO")"
-        break
-    fi
-    # 尝试主次版本
-    ko_file="$COMM_DIR/${android_ver}-${MAJOR_MINOR}_chg_param_override.ko"
-    if [ -f "$ko_file" ]; then
-        CHG_KO="$ko_file"
-        log "找到新格式 chg 模块 (主次版本): $(basename "$CHG_KO")"
-        break
-    fi
-done
-
-# 优先级1: 通用匹配
-if [ -z "$CHG_KO" ]; then
-    if [ -f "$COMM_DIR/chg_param_override.ko" ]; then
-        CHG_KO="$COMM_DIR/chg_param_override.ko"
-        log "找到通用 chg 模块: $(basename "$CHG_KO")"
-    fi
-fi
-
-if [ -n "$CHG_KO" ]; then
-  # 读取可能存在的 chg 配置键
-  # 可用键：CHG_VMAX_UV CHG_CCC_UA CHG_TERM_UA CHG_ICL_UA CHG_LIMIT_PERCENT CHG_PD_VERIFED_ENABLED CHG_PD_VERIFED
-  # chg 模块不通过 insmod 参数配置，采用 proc 接口；这里只负责加载，明确不传递任何参数
-  log "检测到 chg 模块，尝试加载: $CHG_KO"
-  # 使用 insmod 直接加载，不传递任何参数（避免未知参数警告）
-  if ! insmod "$CHG_KO" 2>>"$LOGFILE"; then
-    log_insmod_error "$CHG_KO"
-    # 如果 insmod 失败，尝试使用 modprobe，但明确指定不传递参数
-    if command -v modprobe >/dev/null 2>&1; then
-      log "insmod chg 失败，尝试 modprobe（无参数）"
-      # 使用 -r 选项移除模块（如果已加载），然后重新加载
-      modprobe -r chg_param_override 2>/dev/null || true
-      # 直接使用文件路径加载，避免 modprobe 读取配置文件
-      if modprobe "$CHG_KO" 2>>"$LOGFILE"; then
-        log "modprobe chg 成功"
-      else
-        logw "modprobe chg 也失败"
-        log_insmod_error "$CHG_KO"
-      fi
-    else
-      logw "insmod chg 失败且无 modprobe 可用"
-    fi
-  else
-    log "insmod chg 成功"
-  fi
-
-  # 通过 /proc/chg_param_override 写入配置
-  PROC_PATH="/proc/chg_param_override"
-  if [ -e "$PROC_PATH" ]; then
-    # 组装写入项（仅写入已设置的键）
-    LINES=""
-    [ -n "$CHG_VMAX_UV" ] && LINES="$LINES\nvoltage_max=$CHG_VMAX_UV"
-    [ -n "$CHG_CCC_UA" ] && LINES="$LINES\nconstant_charge_current=$CHG_CCC_UA"
-    [ -n "$CHG_TERM_UA" ] && LINES="$LINES\ncharge_term_current=$CHG_TERM_UA"
-    [ -n "$CHG_ICL_UA" ] && LINES="$LINES\ninput_current_limit=$CHG_ICL_UA"
-    [ -n "$CHG_IVL_UV" ] && LINES="$LINES\ninput_voltage_limit=$CHG_IVL_UV"
-    [ -n "$CHG_LIMIT_PERCENT" ] && LINES="$LINES\ncharge_control_limit=$CHG_LIMIT_PERCENT"
-    if [ "${CHG_PD_VERIFED_ENABLED:-0}" = "1" ] && [ -n "$CHG_PD_VERIFED" ]; then
-      LINES="$LINES\npd_verifed=$CHG_PD_VERIFED"
-    fi
-    # 去掉首行空行
-    LINES=$(echo "$LINES" | sed '/^$/d')
-    if [ -n "$LINES" ]; then
-      log "应用 chg 参数: $(echo "$LINES" | tr '\n' ' '; echo)"
-      echo "$LINES" > "$PROC_PATH" || logw "写入 $PROC_PATH 失败"
-    else
-      log "未设置 chg 参数，跳过写入"
-    fi
-  else
-    logw "未找到 $PROC_PATH，可能 chg 模块未成功加载或设备不支持"
-  fi
-else
-  log "未检测到 chg 模块 (.ko 缺失)，跳过"
-fi
+# ========== 充电模块开机加载已禁用 ==========
+# 说明：chg_param_override.ko 目前存在稳定性问题，开机自动加载可能导致设备重启。
+# 如需使用充电模块，请进入 App 的「充电」页手动加载。
+log "充电模块开机自动加载已禁用"
 
 # ========== 可选：安装随包 APK（LSPosed 助手） ==========
 # 通过 APP_AUTOINSTALL=1 控制是否自动安装（默认 1）

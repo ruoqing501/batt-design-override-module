@@ -169,7 +169,7 @@ object ConfigSync {
                     : > "${'$'}TMP" || exit 1
                 fi
                 {
-                    echo "CHG_APPLY_ON_BOOT=1"
+                    echo "CHG_APPLY_ON_BOOT=0"
                     echo "CHG_BATT_NAME=\"${b}\""
                     echo "CHG_USB_NAME=\"${u}\""
                     echo "CHG_VOLTAGE_MAX_UV=${vmax}"
