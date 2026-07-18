@@ -41,4 +41,10 @@ Thumbs.db
 
 # Specific generated files
 packaging/magisk-batt-design-override/common/battcaplsp.apk
+packaging/magisk-batt-design-override-dynamic/common/*.apk
+packaging/magisk-batt-design-override-dynamic/common/*.ko
+packaging/magisk-batt-design-override-dynamic/common/overlay/*.apk
+packaging/magisk-batt-design-override-dynamic/META-INF/ANDROID.RSA
+packaging/magisk-batt-design-override-dynamic/META-INF/ANDROID.SF
+packaging/magisk-batt-design-override-dynamic/META-INF/MANIFEST.MF
 lsposed-module/modules/

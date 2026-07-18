@@ -1,201 +1,110 @@
 #!/system/bin/sh
-# 动态加载内核模块服务脚本
-# 该脚本会从应用获取对应内核版本的 .ko 文件并加载
+# Magisk service script: load batt_design_override.ko early in post-boot
 
 MODDIR=${0%/*}
-COMM_DIR="$MODDIR/common"
-CONF="$COMM_DIR/params.conf"
-FLAG_DISABLE="$MODDIR/disable_autoload"
-APP_PACKAGE="com.override.battcaplsp"
 
-log() { echo "[batt-design-override][dynamic] $*"; }
-logw() { echo "[batt-design-override][dynamic][warn] $*"; }
+# logging
+LOGFILE="$MODDIR/log.txt"
+_log() { echo "[magisk-batt][service] $*" | tee -a "$LOGFILE" >/dev/null; }
+_logcat() { command -v log >/dev/null 2>&1 && log -p i -t magisk-batt "[service] $*"; }
+logi() { _log "$*"; _logcat "$*"; }
 
-if [ -f "$FLAG_DISABLE" ]; then
-    log "disable_autoload 存在，跳过加载"
-    exit 0
-fi
+# read params from config
+. "$MODDIR/common/params.conf"
 
-# 等待系统启动完成
-n=0; while [ $n -lt 30 ]; do
-    if [ "$(getprop sys.boot_completed 2>/dev/null)" = "1" ]; then break; fi
-    sleep 2; n=$((n+1))
+# 兼容：若用户写了小写 model_name，则与大写变量互通
+[ -n "${model_name:-}" ] && [ -z "${MODEL_NAME:-}" ] && MODEL_NAME="$model_name"
+[ -n "${MODEL_NAME:-}" ] && model_name="$MODEL_NAME"
+
+# where we place the ko
+KOMOD="$MODDIR/common/batt_design_override.ko"
+
+logi "boot wait..."
+# Wait for boot complete and su available if needed
+until [ "$(getprop sys.boot_completed)" = "1" ]; do
+  sleep 2
 done
+logi "boot completed"
 
-# 检测内核版本
-KREL=$(uname -r 2>/dev/null)
-BASE_VER="${KREL%%-*}"
-MAJOR_MINOR=$(echo "$BASE_VER" | cut -d. -f1,2)
+logi "params batt_name=${BATT_NAME} design_uah=${DESIGN_UAH} design_uwh=${DESIGN_UWH} model_name=${MODEL_NAME:-<empty>} override_any=${OVERRIDE_ANY} verbose=${VERBOSE}"
 
-log "检测到内核版本: $KREL (主版本: $MAJOR_MINOR)"
-
-# 查找可用的 .ko 文件（按优先级排序，完全匹配优先）
-ANDROID_VERSIONS="android11 android12 android13 android14 android15"
-KO_SELECTED=""
-
-# 优先级0: 新格式 androidXX-kernel_module.ko
-for android_ver in $ANDROID_VERSIONS; do
-    # 尝试完整版本
-    ko_file="$COMM_DIR/${android_ver}-${KREL}_batt_design_override.ko"
-    if [ -f "$ko_file" ]; then
-        KO_SELECTED="$ko_file"
-        log "找到新格式模块 (完整版本): $(basename "$KO_SELECTED")"
-        break
-    fi
-    # 尝试主次版本
-    ko_file="$COMM_DIR/${android_ver}-${MAJOR_MINOR}_batt_design_override.ko"
-    if [ -f "$ko_file" ]; then
-        KO_SELECTED="$ko_file"
-        log "找到新格式模块 (主次版本): $(basename "$KO_SELECTED")"
-        break
-    fi
-done
-
-# 优先级1: 完全匹配 android版本+完整内核版本
-if [ -z "$KO_SELECTED" ]; then
-    for android_ver in $ANDROID_VERSIONS; do
-        ko_file="$COMM_DIR/batt_design_override-${android_ver}-${KREL}.ko"
-        if [ -f "$ko_file" ]; then
-            KO_SELECTED="$ko_file"
-            log "找到完全匹配的模块 (android+完整版本): $(basename "$KO_SELECTED")"
-            break
-        fi
-    done
-fi
-
-# 优先级2: 完全匹配 android版本+主次版本
-if [ -z "$KO_SELECTED" ]; then
-    for android_ver in $ANDROID_VERSIONS; do
-        ko_file="$COMM_DIR/batt_design_override-${android_ver}-${MAJOR_MINOR}.ko"
-        if [ -f "$ko_file" ]; then
-            KO_SELECTED="$ko_file"
-            log "找到完全匹配的模块 (android+主次版本): $(basename "$KO_SELECTED")"
-            break
-        fi
-    done
-fi
-
-# 优先级3: 简化匹配 完整内核版本
-if [ -z "$KO_SELECTED" ]; then
-    ko_file="$COMM_DIR/batt_design_override-${KREL}.ko"
-    if [ -f "$ko_file" ]; then
-        KO_SELECTED="$ko_file"
-        log "找到匹配的模块 (完整版本): $(basename "$KO_SELECTED")"
-    fi
-fi
-
-# 优先级4: 简化匹配 主次版本
-if [ -z "$KO_SELECTED" ]; then
-    ko_file="$COMM_DIR/batt_design_override-${MAJOR_MINOR}.ko"
-    if [ -f "$ko_file" ]; then
-        KO_SELECTED="$ko_file"
-        log "找到匹配的模块 (主次版本): $(basename "$KO_SELECTED")"
-    fi
-fi
-
-# 优先级5: 通用匹配
-if [ -z "$KO_SELECTED" ]; then
-    ko_file="$COMM_DIR/batt_design_override.ko"
-    if [ -f "$ko_file" ]; then
-        KO_SELECTED="$ko_file"
-        log "找到通用模块: $(basename "$KO_SELECTED")"
-    fi
-fi
-
-if [ -z "$KO_SELECTED" ]; then
-    log "未找到匹配的内核模块，尝试通知应用下载"
-    # 创建内核版本信息文件供应用读取
-    echo "$MAJOR_MINOR" > "$COMM_DIR/kernel_version"
-    echo "$KREL" > "$COMM_DIR/kernel_release"
-    
-    # 发送广播通知应用（如果应用已安装）
-    if pm list packages | grep -q "^package:$APP_PACKAGE$"; then
-        am broadcast -a com.override.battcaplsp.KERNEL_MODULE_NEEDED \
-            --es kernel_version "$MAJOR_MINOR" \
-            --es kernel_release "$KREL" \
-            --es module_path "$COMM_DIR" >/dev/null 2>&1 || true
-        log "已通知应用下载内核模块"
+# Prefer insmod (kernel module loader)
+if [ -f "$KOMOD" ]; then
+  # Try to insmod with parameters; fall back to modprobe if available
+  # 仅当配置了 MODEL_NAME（非空）时才传递，避免空字符串影响判断；
+  # 但 insmod 传空字符串也问题不大，这里做条件控制更直观。
+  if [ -n "${MODEL_NAME:-}" ]; then
+    INS_ARGS="batt_name=\"$BATT_NAME\" design_uah=$DESIGN_UAH design_uwh=$DESIGN_UWH model_name=\"$MODEL_NAME\" override_any=$OVERRIDE_ANY verbose=$VERBOSE"
+  else
+    INS_ARGS="batt_name=\"$BATT_NAME\" design_uah=$DESIGN_UAH design_uwh=$DESIGN_UWH override_any=$OVERRIDE_ANY verbose=$VERBOSE"
+  fi
+  if eval insmod "$KOMOD" $INS_ARGS 2>>"$LOGFILE"; then
+    logi "insmod success"
+  elif command -v modprobe >/dev/null 2>&1; then
+    if [ -n "${MODEL_NAME:-}" ]; then
+      MOD_ARGS="batt_name=\"$BATT_NAME\" design_uah=$DESIGN_UAH design_uwh=$DESIGN_UWH model_name=\"$MODEL_NAME\" override_any=$OVERRIDE_ANY verbose=$VERBOSE"
     else
-        log "应用未安装，无法自动下载模块"
+      MOD_ARGS="batt_name=\"$BATT_NAME\" design_uah=$DESIGN_UAH design_uwh=$DESIGN_UWH override_any=$OVERRIDE_ANY verbose=$VERBOSE"
     fi
-    
-    log "请在应用中手动下载对应版本的内核模块"
-    exit 1
+    if eval modprobe "$KOMOD" $MOD_ARGS 2>>"$LOGFILE"; then
+      logi "modprobe success"
+    else
+      logi "modprobe failed"
+    fi
+  else
+    logi "insmod failed (no modprobe)"
+  fi
+else
+  logi "ko not found: $KOMOD"
 fi
 
-# 解析配置
-[ -f "$CONF" ] && . "$CONF"
-
-# 构建 insmod 参数
-ARGS=""
-[ -n "$MODEL_NAME" ] && ARGS="$ARGS model_name=$MODEL_NAME"
-[ -n "$DESIGN_UAH" ] && ARGS="$ARGS design_uah=$DESIGN_UAH"
-[ -n "$DESIGN_UWH" ] && ARGS="$ARGS design_uwh=$DESIGN_UWH"
-[ -n "$BATT_NAME" ] && ARGS="$ARGS batt_name=$BATT_NAME"
-[ -n "$OVERRIDE_ANY" ] && ARGS="$ARGS override_any=$OVERRIDE_ANY"
-[ -n "$VERBOSE" ] && ARGS="$ARGS verbose=$VERBOSE"
-
-ARGS=$(echo "$ARGS" | sed 's/^ *//')
-
-log "加载模块: $KO_SELECTED 参数: $ARGS"
-if ! insmod "$KO_SELECTED" $ARGS 2>&1; then
-    logw "insmod 失败"
-    exit 1
+# 将目标容量作为系统属性暴露，供 LSPosed Hook 使用（无论是否启用 shared_prefs 覆盖）
+calc_cap_mah_global() {
+  if [ "${CAPACITY_MAH:-0}" -gt 0 ] 2>/dev/null; then
+    echo "${CAPACITY_MAH}"
+  elif [ "${DESIGN_UAH:-0}" -gt 0 ] 2>/dev/null; then
+    echo $((DESIGN_UAH / 1000))
+  else
+    echo 0
+  fi
+}
+CAP_MAH_GLOBAL=$(calc_cap_mah_global)
+if [ "$CAP_MAH_GLOBAL" -gt 0 ] 2>/dev/null; then
+  setprop persist.sys.batt.capacity_mah "$CAP_MAH_GLOBAL"
+  logi "exported persist.sys.batt.capacity_mah=$CAP_MAH_GLOBAL"
 fi
 
-# 可选：加载充电参数模块
-CHG_KO=""
-# 优先级0: 新格式 androidXX-kernel_chg_param_override.ko
-for android_ver in $ANDROID_VERSIONS; do
-    # 尝试完整版本
-    ko_file="$COMM_DIR/${android_ver}-${KREL}_chg_param_override.ko"
-    if [ -f "$ko_file" ]; then
-        CHG_KO="$ko_file"
-        log "找到新格式 chg 模块 (完整版本): $(basename "$CHG_KO")"
-        break
-    fi
-    # 尝试主次版本
-    ko_file="$COMM_DIR/${android_ver}-${MAJOR_MINOR}_chg_param_override.ko"
-    if [ -f "$ko_file" ]; then
-        CHG_KO="$ko_file"
-        log "找到新格式 chg 模块 (主次版本): $(basename "$CHG_KO")"
-        break
-    fi
-done
 
-# 优先级1: 通用匹配
-if [ -z "$CHG_KO" ]; then
-    if [ -f "$COMM_DIR/chg_param_override.ko" ]; then
-        CHG_KO="$COMM_DIR/chg_param_override.ko"
-        log "找到通用 chg 模块: $(basename "$CHG_KO")"
-    fi
-fi
+# ===== 自动安装 LSPosed 模块 APK（可选）=====
+auto_install_lsp() {
+  local pkg="${LSP_PKG_NAME:-com.example.battcaplsp}"
+  local apk_path_cfg="${LSP_APK_PATH:-$MODDIR/common/battcaplsp.apk}"
+  local apk_path="$apk_path_cfg"
+  # 若路径中包含 ${MODDIR} 变量文本，展开
+  apk_path=$(eval echo "$apk_path")
+  if [ "${AUTO_INSTALL_LSPOSED:-0}" != "1" ]; then
+    return
+  fi
+  if [ ! -f "$apk_path" ]; then
+    logi "auto-install: apk not found $apk_path"
+    return
+  fi
+  local installed=0
+  if pm list packages | grep -q "$pkg" 2>/dev/null; then
+    installed=1
+  fi
+  if [ "$installed" = "1" ] && [ "${LSP_FORCE_REINSTALL:-0}" != "1" ]; then
+    logi "auto-install: $pkg already installed, skip"
+    return
+  fi
+  # 推送到临时路径后再安装，避免直接从挂载路径安装出错
+  local tmp_apk="/data/local/tmp/$(basename "$apk_path")"
+  cp "$apk_path" "$tmp_apk" 2>/dev/null || {
+    logi "auto-install: copy to $tmp_apk failed"
+    return
+  }
+  pm install -r -d "$tmp_apk" >/dev/null 2>&1 && logi "auto-install: installed $pkg" || logi "auto-install: install failed"
+}
 
-if [ -n "$CHG_KO" ]; then
-    log "加载充电参数模块: $CHG_KO"
-    # 明确不传递任何参数，避免未知参数警告
-    insmod "$CHG_KO" 2>/dev/null || logw "充电模块加载失败"
-    
-    # 应用充电参数
-    PROC_PATH="/proc/chg_param_override"
-    if [ -e "$PROC_PATH" ]; then
-        LINES=""
-        [ -n "$CHG_VMAX_UV" ] && LINES="$LINES\nvoltage_max=$CHG_VMAX_UV"
-        [ -n "$CHG_CCC_UA" ] && LINES="$LINES\nconstant_charge_current=$CHG_CCC_UA"
-        [ -n "$CHG_TERM_UA" ] && LINES="$LINES\ncharge_term_current=$CHG_TERM_UA"
-        [ -n "$CHG_ICL_UA" ] && LINES="$LINES\ninput_current_limit=$CHG_ICL_UA"
-        [ -n "$CHG_IVL_UV" ] && LINES="$LINES\ninput_voltage_limit=$CHG_IVL_UV"
-        [ -n "$CHG_LIMIT_PERCENT" ] && LINES="$LINES\ncharge_control_limit=$CHG_LIMIT_PERCENT"
-        if [ "${CHG_PD_VERIFED_ENABLED:-0}" = "1" ] && [ -n "$CHG_PD_VERIFED" ]; then
-            LINES="$LINES\npd_verifed=$CHG_PD_VERIFED"
-        fi
-        
-        LINES=$(echo "$LINES" | sed '/^$/d')
-        if [ -n "$LINES" ]; then
-            echo "$LINES" > "$PROC_PATH" || logw "写入充电参数失败"
-        fi
-    fi
-fi
-
-log "模块加载完成"
-exit 0
+# 执行自动安装
+auto_install_lsp &
